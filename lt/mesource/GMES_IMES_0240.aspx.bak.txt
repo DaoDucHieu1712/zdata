@@ -1,0 +1,1733 @@
+﻿<%@ Page Language="C#" MasterPageFile="~/Master/MasterApiPage.Master" AutoEventWireup="true" CodeFile="GMES_IMES_0240.aspx.cs" Inherits="GMES_IMES_0240" %>
+
+<%--/* 
+*************************************************************************************************
+* @source  : GMES_IM_POM/GMES_IMES_0240.aspx
+* @desc    : 공정관리-측정관리-측정 정보 관리
+************************************************************************************************* 
+* VER  DATE         AUTHOR      		DESCRIPTION
+*************************************************************************************************
+* 1.0  2019/08/22   김원욱              INIT
+* 1.1  2021/09/07   강민규              측정항목 추가소분량 추가, 메뉴마감 추가
+  1.2  2021/10/19   김명진              DA_IM_LMS_UPD_MEASURE_DATA --> BR_IM_LMS_REG_MEASURE_DATA From 정영호C
+  1.3  2021/11/17   강민규              내부정보가 표시되는 alert()제거, 마감정보중 색 표시되는 부분 주석처리 
+* 2.0  2021/12/09   강민규              마감정보 색 표시 되는 부분 주석 해제, 마감정보 추가
+  2.1  2021/12/22   강민규              마감일이 지난 Data가 삭제에러 메시지 추가, DA_IM_PRD_SEL_WIPCLOSE input SHOPID추가
+  2.2  2022/02/23   강민규              C20220110-000700 측정항목 Metal용액 투입량 추가
+  2.3  2022/07/06   강민규              C20220623-000071 측정항목 Capa 추가
+  2.4  2022/08/01   강민규              C20220726-000547 Metal용액 투입량의 계획량 컬럼 추가
+  2.5  2023/02/23   황유라              C20230223-000052 측정정보관리 4공장 삭제 기능 수정 件
+  2.6  2023/10/06   정다운              제품코드, 제품명 컬럼 및 입력 기능 추가 (품목팝업)
+  2.7  2023/10/11   정다운              단위 선택 추가
+  2.8  2023/10/18   정다운              측정항목이 전력량, 산소량 인 경우 사용량 수정 기능 추가
+  2.9  2023/10/20   정다운              필수 조회조건 변경 ( 필수 : 측정항목 
+                                                             기타 : 공장/동, 라인/실 )
+*************************************************************************************************
+*/--%>
+
+<%@ Register Src="../common/UserControl/UCUpdatePanelContent.ascx" TagName="UpdatePanelContent" TagPrefix="uc" %>
+<%@ Register Src="../common/UserControl/UCSearchToggle.ascx" TagName="SearchToggleContent" TagPrefix="uc" %>
+<%@ Register Src="../common/UserControl/UCpopCalendar.ascx" TagName="UCpopCalendar" TagPrefix="uc" %>
+<%@ Register Src="../common/UserControl/UCRealgrid.ascx" TagName="Realgrid" TagPrefix="uc" %>
+
+<%-- Fucntion --%>
+<asp:Content ID="HeaderContent" ContentPlaceHolderID="headHolder" runat="server">
+
+    <script type="text/javascript" src="/GMES_COM/Scripts/IMSCommon.js"></script>
+
+    <script language="javascript" type="text/javascript">
+
+        $(window).resize(function () {
+            AutoHeightSpread(true);
+        });
+
+        function onSlideResize() {
+            AutoHeightSpread(false);
+        }
+
+        $(document).ready(function () {
+            InitData();
+        });
+
+        function xInitPage() {
+            AutoHeightSpread();
+        };
+        function formatter2(date) {
+            if (!date) { return ''; }
+            var y = date.getFullYear();
+            var m = date.getMonth() + 1;
+            return y + '-' + (m < 10 ? ('0' + m) : m);
+        }
+        function parser2(s) {
+            if (!s) { return null; }
+            var ss = s.split('-');
+            var y = parseInt(ss[0], 10);
+            var m = parseInt(ss[1], 10);
+            if (!isNaN(y) && !isNaN(m)) {
+                return new Date(y, m - 1, 1);
+            } else {
+                return new Date();
+            }
+        }
+
+        function setDateTime() {
+            var toDay = $.fn.datebox.defaults.formatter(new Date());
+            $('#dtDate').datetimespinner('setValue', toDay);
+            //setCloseMonth();
+        }
+
+
+        function setCloseMonth() {
+            var toDay = $.fn.datebox.defaults.formatter(new Date());
+
+            var WipCloseDate;
+            var WipClose;
+            // <summary>실사일자에 해당되는 마감월을 설정한다.</summary> 
+            var items = {};
+            var dtDate = $('#dtDate').datetimespinner('getValue');
+            items.WIPCLOSEMONTH = dtDate.replace('-', '');
+            items.MENUID = 'IUSM411001';
+            items.SHOPID = $("[id$=hidShopID]").val();
+
+            var param = {};
+            param.bizID = "DA_IM_PRD_SEL_WIPCLOSE";
+            param.items = items;
+
+            var url = "/GMES_COM/Service/CallBizJson.aspx/GetBizJsonByDictionary";
+
+            sendRequestMethod(function (id, datas) {
+                if (datas != null && datas.length > 0) {
+                    WipCloseDate = datas[0].WIPCLOSEDATE;
+                    if (new Date(toDay) <= new Date(WipCloseDate)) {//WipClose 이전
+                        SetButtonEnable("#btnSave", false);
+                        SetButtonEnable("#btnRowAdd", true);
+                        SetButtonEnable("#btnRowDelete", true);
+                        SetButtonEnable("#btnDel", true);
+                    } else {
+                        SetButtonEnable("#btnSave", false);
+                        SetButtonEnable("#btnRowAdd", false);
+                        SetButtonEnable("#btnRowDelete", false);
+                        SetButtonEnable("#btnDel", false);
+                    }
+
+                    //session에 wipclose값 저장
+                    WipClose = datas[0].WIPCLOSE;
+                    //sessionStorage
+                    window.sessionStorage.clear();
+                    window.sessionStorage.setItem("WipClose", WipClose);
+                    //조회를 누른 시점의 마감월을 session에 저장
+                    window.sessionStorage.setItem("dtDate", $('#dtDate').datetimespinner('getValue'));
+
+                }
+                vFirst = false;
+            }, param, "POST", url);
+
+
+        }
+        //#endregion 
+        function AutoHeightSpread(cSize) {
+            var gridMaster = document.getElementById("UCRealgrid");
+
+            var masterSchHeight = document.getElementById("divSearchPart").clientHeight;
+            var masterTitHeight = document.getElementById("divMidButton").clientHeight;
+            var pageHeight = document.documentElement.clientHeight;
+            var dockh = 0;
+
+            if (IsDock()) {
+                dockh = DockHeight();
+
+                if (dockh > 0) {
+                    dockh = dockh - 20;
+                }
+            }
+
+            var i = 0;
+            //i = pageHeight - masterHeight - dockh - 70;
+            i = pageHeight - (masterSchHeight + masterTitHeight + dockh) - 100;
+
+            gridMaster.style.height = String(i) + 'px';
+
+            UCRealgrid.ResetSize();
+
+            if (cSize) {
+                //var schWidth = window.outerWidth;
+                //var comWidth = parseInt(schWidth / 4) - 60;
+
+                //$("#cbo_CstStat").combobox({ width: comWidth });
+                //$("#txt_CstId").textbox({ width: comWidth });
+                //$("#txt_LotId").textbox({ width: comWidth });
+            }
+        }
+
+        function InitData() {
+            SetArea();
+            setDateTime();
+            SetMeasureItem();
+            ChangeItemGrid();
+            setUnit();
+            SetButtonEnable("#btnSave", false);
+            SetButtonEnable("#btnModify", false);
+            SetButtonEnable("#btnDel", false);
+            SetButtonEnable("#btnRowAdd", false);
+            SetButtonEnable("#btnRowDelete", false);
+        }
+
+
+        function SetArea() {
+            /// <summary>공장/동 콤보박스에 데이터를 설정한다.</summary>  
+            $('#cboArea').combobox({
+                url: '../common/xml/CallBizJson.aspx?sp_name=BR_IM_SEL_AREA_CBO&AREAIUSE=Y&LANGID=' + $("[id$=hidLangID]").val()
+                    + '&SHOPID=' + $("[id$=hidShopID]").val() + '&SHOPIUSE=Y&USERID=' + $("[id$=hidUserID]").val() + '&CBOOPT=ALL|AREAID|AREANAME_ML',
+                valueField: 'AREAID',
+                textField: 'AREANAME_ML',
+                onSelect: function (row) {
+                    SetGrade(row);
+                },
+                onLoadSuccess: function () {
+                    var items = $(this).combobox("getData");
+                    if (items.length === 2) {
+                        var opts = $(this).combobox("options");
+                        $(this).combobox("select", items[1][opts.valueField]);
+                    }
+                },
+                onLoadSuccess: function () {
+
+                    var autoSelect = false;
+                    var AREAIDValue = "<%=SSUser.AreaID%>";
+
+                    if (AREAIDValue.length > 0) {
+                        var items = $(this).combobox("getData");
+                        var opts = $(this).combobox("options");
+                        var strIn = false;
+                        for (var i = 0; i < items.length; i++) {
+                            if (items[i][opts.valueField] == AREAIDValue) { // 콤보박스 데이터가 있다면 있음 표시 하고 SELECT될 수 있도록 한다.
+                                strIn = true;
+                                break;
+                            }
+                        }
+                        if (strIn) {
+                            $(this).combobox("select", AREAIDValue);
+                        } else {
+                            autoSelect = true;
+                        }
+                    } else {
+                        autoSelect = true;
+                    }
+
+                    if (autoSelect) {
+
+                        var items = $(this).combobox("getData");
+                        if (items.length === 2) {
+                            var opts = $(this).combobox("options");
+                            $(this).combobox("select", items[1][opts.valueField]);
+                        }
+                    }
+                }
+            });
+        }
+
+        //#endregion
+        //
+        function SetGrade(record) {
+            /// <summary>제품군 콤보박스에 데이터를 설정한다.</summary>  
+            $('#cboGrade').combobox({
+                url: '../common/xml/CallBizJson.aspx?sp_name=BR_IM_SEL_PRODUCTGROUP_BY_AREA_CBO&LANGID=' + $("[id$=hidLangID]").val() + '&AREAID=' + record.AREAID
+                    + '&CBOOPT=ALL|PDGRID|PDGRNAME',
+                valueField: 'PDGRID',
+                textField: 'PDGRNAME',
+                onSelect: function (row) {
+                    SetProcessSegment(record.AREAID, row);
+                    var pdgrid = row.PDGRID;
+                    SetLine(record.AREAID, row.PDGRID);
+                },
+                onLoadSuccess: function () {
+                    var items = $(this).combobox("getData");
+                    if (items.length === 2) {
+                        var opts = $(this).combobox("options");
+                        $(this).combobox("select", items[1][opts.valueField]);
+                    }
+                }
+            });
+        }
+
+        //#region SetProcess - 단위공정 콤보박스에 데이터를 설정한다
+        function SetProcess(Arearid, record, pcsgid) {
+            /// <summary>단위공정 콤보박스에 데이터를 설정한다.</summary>   
+            $('#cboProcess').combobox({
+                url: '../common/xml/CallBizJson.aspx?sp_name=BR_IM_SEL_PROCESS_BY_PCSGID_CBO&LANGID=' + $("[id$=hidLangID]").val() + '&AREAID=' + Arearid
+                    + '&SHOPID=' + $("[id$=hidShopID]").val() + '&EQSGIUSE=Y&EQSGID=' + record.EQSGID + '&PCSGID=' + pcsgid + '&PROCIUSE=Y&AREAIUSE=Y&SHOPIUSE=Y&PCSGIUSE=Y&CBOOPT=ALL|PROCID|PROCNAME',
+                valueField: 'PROCID',
+                textField: 'PROCNAME',
+                onSelect: function (row) {
+                    //SetLine(Arearid, row);
+                    SetEquipment(Arearid, row.PROCID, record.EQSGID);
+                },
+                onLoadSuccess: function () {
+                    var items = $(this).combobox("getData");
+                    if (items.length === 2) {
+                        var opts = $(this).combobox("options");
+                        $(this).combobox("select", items[1][opts.valueField]);
+                    }
+                }
+
+            });
+        }
+        //#endregion
+
+
+
+        //#region SetProcess - 단위공정군 콤보박스에 데이터를 설정한다
+        function SetProcessSegment(Arearid, record) {
+            $('#cboProcessSegment').combobox({
+                url: '../common/xml/CallBizJson.aspx?sp_name=BR_IM_SEL_PROCESSSEGMENT_BY_PCSGID_CBO&LANGID=' + $("[id$=hidLangID]").val() + '&AREAID=' + Arearid
+                    + '&SHOPID=' + $("[id$=hidShopID]").val() + '&EQSGIUSE=Y&PROCIUSE=Y&AREAIUSE=Y&SHOPIUSE=Y&PCSGIUSE=Y&CBOOPT=ALL|PCSGID|PCSGNAME',
+                valueField: 'PCSGID',
+                textField: 'PCSGNAME',
+                onSelect: function (row) {
+                    SetLine(Arearid, record, row);
+                },
+                onLoadSuccess: function () {
+                    var items = $(this).combobox("getData");
+                    if (items.length === 2) {
+                        var opts = $(this).combobox("options");
+                        $(this).combobox("select", items[1][opts.valueField]);
+                    }
+                }
+            });
+        }
+        //#endregion
+
+        //#region SetLine - 라인/실 콤보박스에 데이터를 설정한다
+        function SetLine(areaId, PDGRID) {
+            /// <summary>라인/실 콤보박스에 데이터를 설정한다.</summary>   
+            $('#cboLine').combobox({
+                url: '../common/xml/CallBizJson.aspx?sp_name=BR_IM_SEL_EQUIPMENTSEGMENT_BY_PCGSID_CBO_FOR_MEASURE&LANGID=' + $("[id$=hidLangID]").val() + '&AREAID=' + areaId
+                    + '&SHOPID=' + $("[id$=hidShopID]").val() + '&PDGRID=' + PDGRID + '&CBOOPT=ALL|EQSGID|EQSGNAME',
+                valueField: 'EQSGID',
+                textField: 'EQSGNAME',
+                onSelect: function (row) {
+                    SetEquipmentItem(areaId, row.EQSGID);
+                },
+                onLoadSuccess: function () {
+                    var autoSelect = false;
+                    var WorkTypeValue = "";
+                    var tempProcess = ($("#cboLine").combobox("getValue").length > 0) ? $("#cboLine").combobox("getValue") : null
+
+                    if ($(this)[0].id == "cboLine") {
+                        if (tempProcess != undefined) {
+                            WorkTypeValue = tempProcess;
+                        }
+                    }
+                    if (WorkTypeValue.length > 0) {
+                        var items = $(this).combobox("getData");
+                        var opts = $(this).combobox("options");
+                        var strIn = false;
+                        for (var i = 0; i < items.length; i++) {
+                            if (items[i][opts.valueField] == WorkTypeValue) // 콤보박스 데이터가 있다면 있음 표시 하고 SELECT될 수 있도록 한다.
+                            {
+                                strIn = true;
+                                break;
+                            }
+                        }
+                        if (strIn) {
+                            $(this).combobox("select", WorkTypeValue);
+                        }
+                    }
+                    else {
+                        autoSelect = true;
+                    }
+
+                    if (autoSelect) {
+                        var items = $(this).combobox("getData");
+                        if (items.length === 2) {
+                            var opts = $(this).combobox("options");
+                            $(this).combobox("select", items[1][opts.valueField]);
+                        }
+                    }
+                }
+            });
+        }
+
+        //#region SetMeasureItem -  측정항목에 대한 콤보박스 설정
+        function SetMeasureItem() {
+            var param1 = 'MeasureItem';
+            var param2 = "'CA', 'EE', 'MS', 'OA', 'PC', 'PQ', 'SD'";
+
+            $('#cboMeasureItem').combobox({
+                //url: '../common/xml/CallBizJson.aspx?sp_name=BR_IM_COM_GET_COMMONCODE_CBO&LANGID=' + $("[id$=hidLangID]").val() + '&CMCDTYPE=MeasureItem&CBOOPT=OPT|CMCODE|CMCDNAME',
+                url: '../common/xml/CallBizJson.aspx?sp_name=BR_CUS_SEL_COMMONCODE_CBO_CMCODE&LANGID=' + $("[id$=hidLangID]").val() + '&CMCDTYPE=' + param1 + '&CMCODE=' + param2 + '&CBOOPT=OPT|CMCODE|CMCDNAME',
+                valueField: 'CMCODE',
+                textField: 'CMCDNAME',
+                onLoadSuccess: function () {
+                    var items = $(this).combobox("getData");
+                    if (items.length === 2) {
+                        var opts = $(this).combobox("options");
+                        $(this).combobox("select", items[1][opts.valueField]);
+                    }
+                    var autoSelect = false;
+                    var MeasureItem = "EE";
+                    if ($(this).combobox("getData").length > 0) {
+                        var items = $(this).combobox("getData");
+                        var opts = $(this).combobox("options");
+                        var strIn = false;
+                        for (var i = 0; i < items.length; i++) {
+                            if (items[i][opts.valueField] == MeasureItem) { // 콤보박스 데이터가 있다면 있음 표시 하고 SELECT될 수 있도록 한다.
+                                strIn = true;
+                                break;
+                            }
+                        }
+                        if (strIn) {
+                            $(this).combobox("select", MeasureItem);
+                        } else {
+                            autoSelect = true;
+                        }
+                    } else {
+                        autoSelect = true;
+                    }
+
+                    if (autoSelect) {
+
+                        var items = $(this).combobox("getData");
+                        if (items.length === 2) {
+                            var opts = $(this).combobox("options");
+                            $(this).combobox("select", items[1][opts.valueField]);
+                        }
+                    }
+                },
+            });
+        }
+        var EquipLabel;
+        var EquipValue;
+        //추가소분량의 구분값인 설비 정보
+        function SetEquipmentItem(areaid, eqsgid) {
+            CallBizAjax({
+                SP_NAME: "BR_IM_SEL_EQUIPMENT_SHOP_CBO",
+                LANGID: $("[id$=hidLangID]").val(),
+                SHOPID: $("[id$=hidShopID]").val(),
+                AREAID: areaid,
+                EQSGID: eqsgid,
+                S29: 'DIVISION'
+            }, function (result) {
+                EquipLabel = [];
+                EquipValue = [];
+                for (var i = 0; i < result.length; i++) {
+                    EquipLabel.push(result[i].EQPTNAME);
+                    EquipValue.push(result[i].EQPTID);
+                };
+            });
+        }
+
+        //#regin setUnit -단위 콤보 박스        
+        function setUnit() {
+            var param1 = "UNIT";
+            var param2 = "'Kg', 'NM3'";
+
+            $('#cboUnit').combobox({
+                //url: '../common/xml/CallBizJson.aspx?sp_name=BR_IM_COM_GET_COMMONCODE_CBO&LANGID=' + $("[id$=hidLangID]").val() + '&CMCDTYPE=MeasureItem&CBOOPT=OPT|CMCODE|CMCDNAME',
+                url: '../common/xml/CallBizJson.aspx?sp_name=BR_CUS_SEL_COMMONCODE_CBO_CMCODE&LANGID=' + $("[id$=hidLangID]").val() + '&CMCDTYPE=' + param1 + '&CMCODE=' + param2 + '&CBOOPT=OPT|CMCODE|CMCDNAME',
+                valueField: 'CMCODE',
+                textField: 'CMCDNAME',
+                onLoadSuccess: function () {
+                    var items = $(this).combobox("getData");
+                    if (items.length === 2) {
+                        var opts = $(this).combobox("options");
+                        $(this).combobox("select", items[1][opts.valueField]);
+                    }
+                    var autoSelect = false;
+                    var MeasureItem = "EE";
+                    if ($(this).combobox("getData").length > 0) {
+                        var items = $(this).combobox("getData");
+                        var opts = $(this).combobox("options");
+                        var strIn = false;
+                        for (var i = 0; i < items.length; i++) {
+                            if (items[i][opts.valueField] == MeasureItem) { // 콤보박스 데이터가 있다면 있음 표시 하고 SELECT될 수 있도록 한다.
+                                strIn = true;
+                                break;
+                            }
+                        }
+                        if (strIn) {
+                            $(this).combobox("select", MeasureItem);
+                        } else {
+                            autoSelect = true;
+                        }
+                    } else {
+                        autoSelect = true;
+                    }
+
+                    if (autoSelect) {
+
+                        var items = $(this).combobox("getData");
+                        if (items.length === 2) {
+                            var opts = $(this).combobox("options");
+                            $(this).combobox("select", items[1][opts.valueField]);
+                        }
+                    }
+                },
+            });
+        }
+
+        var AreaLabel;
+        var AreaValue;
+        var EqsgLabel;
+        var EqsgValue;
+        var EeLabel;
+        var EeValue;
+        var OaLabel;
+        var OaValue;
+        var PcLabel;
+        var PcValue;
+        var PcLabel_IK;
+        var PcValue_IK;
+        var PQLabel;
+        var PQValue;
+        var SelPcLabel;
+        var UnitLabel;
+        var UnitValue;
+
+        function ChangeItemGrid() {
+            var items = $('#cboMeasureItem').combobox('getValue');
+
+            CallBizAjax({
+                //SP_NAME: "BR_IM_SEL_AREA_CBO",
+                //AREAIUSE: "Y",
+                //LANGID: $("[id$=hidLangID]").val(),
+                //SHOPID: $("[id$=hidShopID]").val(),
+                //SHOPIUSE: "Y",
+                //USERID: $("[id$=hidUserID]").val()
+            }, function (result) {
+                //AreaLabel = [];
+                //AreaValue = [];
+                //for (var i = 0; i < result.length; i++) {
+                //    AreaValue.push(result[i].AREAID);
+                //    AreaLabel.push(result[i].AREANAME_ML);
+                //};
+                CallBizAjax({
+                    SP_NAME: "BR_IM_SEL_EQUIPMENTSEGMENT_BY_PCGSID_CBO_FOR_MEASURE",
+                    LANGID: $("[id$=hidLangID]").val(),
+                    SHOPID: $("[id$=hidShopID]").val(),
+                    AREAID: $('#cboArea').combobox('getValue')
+
+                }, function (result) {
+                    EqsgLabel = [];
+                    EqsgValue = [];
+                    for (var i = 0; i < result.length; i++) {
+                        EqsgLabel.push(result[i].EQSGNAME);
+                        EqsgValue.push(result[i].EQSGID);
+                    };
+                });
+                CallBizAjax({
+                    SP_NAME: "BR_IM_COM_GET_COMMONCODE_CBO",
+                    LANGID: $("[id$=hidLangID]").val(),
+                    CMCDTYPE: "Measure_EE"
+                }, function (result) {
+                    EeLabel = [];
+                    EeValue = [];
+                    for (var i = 0; i < result.length; i++) {
+                        EeLabel.push(result[i].CMCDNAME);
+                        EeValue.push(result[i].CMCODE);
+                    };
+                    CallBizAjax({
+                        SP_NAME: "BR_IM_COM_GET_COMMONCODE_CBO",
+                        LANGID: $("[id$=hidLangID]").val(),
+                        CMCDTYPE: "OXY_GEN_KIND"
+                    }, function (result) {
+                        OaLabel = [];
+                        OaValue = [];
+                        for (var i = 0; i < result.length; i++) {
+                            OaLabel.push(result[i].CMCDNAME);
+                            OaValue.push(result[i].CMCODE);
+                        };
+                    });
+                    CallBizAjax({
+                        SP_NAME: "BR_CUS_SEL_COMMONCODE_CBO_CMCODE",
+                        LANGID: $("[id$=hidLangID]").val(),
+                        CMCDTYPE: "UNIT",
+                        CMCODE: "'NM3', 'Kg'"
+                    }, function (result) {
+                        UnitLabel = [];
+                        UnitValue = [];
+                        for (var i = 0; i < result.length; i++) {
+                            UnitLabel.push(result[i].CMCDNAME);
+                            UnitValue.push(result[i].CMCODE);
+                        };
+                    });
+                });
+
+                CallBizAjax({
+                    SP_NAME: "DA_IM_SEL_PC_LIST",
+                    LANGID: $("[id$=hidLangID]").val()
+                }, function (result) {
+                    PcLabel = [];
+                    PcValue = [];
+                    for (var i = 0; i < result.length; i++) {
+                        PcLabel.push(result[i].MTRLNAME);
+                        PcValue.push(result[i].MTRLID);
+                    };
+                });
+
+                CallBizAjax({
+                    SP_NAME: "BR_IM_COM_GET_COMMONCODE_CBO",
+                    LANGID: $("[id$=hidLangID]").val(),
+                    CMCDTYPE: "PC_GEN_KIND"
+                }, function (result) {
+                    PcLabel_IK = [];
+                    PcValue_IK = [];
+                    for (var i = 0; i < result.length; i++) {
+                        PcLabel_IK.push(result[i].CMCDNAME);
+                        PcValue_IK.push(result[i].CMCODE);
+                    };
+                });
+
+                CallBizAjax({
+                    SP_NAME: "BR_IM_COM_GET_COMMONCODE_CBO",
+                    LANGID: $("[id$=hidLangID]").val(),
+                    CMCDTYPE: "Measure_PQ"
+                }, function (result) {
+                    PQLabel = [];
+                    PQValue = [];
+                    for (var i = 0; i < result.length; i++) {
+                        PQLabel.push(result[i].CMCDNAME);
+                        PQValue.push(result[i].CMCODE);
+                    };
+                });
+
+                InitGrid("init");
+            });
+
+        }
+
+        function InitGrid(code) {
+
+            UCRealgrid.ColumnsClear();
+            UCRealgrid.AddColumn("USEDATE", "<%=lang.word["Date"]%>", 100, "yyyy-MM-dd", ColumnType.TEXT, false, true, null, null); //일
+            UCRealgrid.AddColumn("AREANAME", "<%=lang.word["AREANAME"]%>", 200, "center", 4, false, true, null, null); // 공장동
+            UCRealgrid.AddColumn("AREAID", "<%=lang.word["AREANAME"]%> ID", 100, "center", ColumnType.TEXT, false, true, null, null); // 공장동 ID
+            UCRealgrid.AddColumn("EQSGNAME", "<%=lang.word["Line/Equipment Seg."]%>", 250, "center", ColumnType.TEXT, false, true, null, null); // 라인/실
+            UCRealgrid.AddColumn("EQSGID", "<%=lang.word["Line/Equipment Seg."]%> ID", 150, "center", 4, false, true, null, null); // 라인/실 ID
+            UCRealgrid.AddColumn("UTILID", "<%=lang.word["UTILID"]%>", 100, "center", ColumnType.TEXT, false, false, null, null);
+            UCRealgrid.AddColumn("UTILNAME", "<%=lang.word["Measure Item"]%>", 150, "center", ColumnType.TEXT, false, false, null, null);
+            UCRealgrid.AddColumn("SEPARATION_TYPE", "<%=lang.word["Classification CODE"]%>", 100, "center", ColumnType.TEXT, false, false, null, null); // 구분 코드
+            UCRealgrid.AddColumn("SEPARATION_TYPE_NAME", "<%=lang.word["Classification"]%>", 400, "center", ColumnType.TEXT, false, true, null, null); // 구분 코드명
+
+            // 2023.10.05 정다운 제품코드 추가            
+            UCRealgrid.AddColumn("PRODID", "<%=lang.word["PRODID"]%>", 100, "center", ColumnType.TEXT, false, true, null, null); // 제품코드
+            UCRealgrid.AddColumn("PRODNAME", "<%=lang.word["PRODNAME"]%>", 200, "center", ColumnType.TEXT, false, true, null, null); // 제품명            
+
+            UCRealgrid.AddColumn("UNIT", "<%=lang.word["UNIT"]%>", 100, "center", ColumnType.TEXT, false, false, null, null);
+            //C20220623-000071 2022.07.05 강민규 Capa 추가            
+            UCRealgrid.AddColumn("ATTR1", "<%=lang.word["ATTR1"]%>", 150, "#,###.##0", 1, false, false, null, null); // Attr1
+            UCRealgrid.AddColumn("ATTR2", "<%=lang.word["ATTR2"]%>", 150, "#,###.##0", 1, false, false, null, null); // Attr2
+            UCRealgrid.AddColumn("ATTR3", "<%=lang.word["ATTR3"]%>", 150, "#,###.##0", 1, false, false, null, null); // Attr3
+            UCRealgrid.AddColumn("ATTR4", "<%=lang.word["ATTR4"]%>", 150, "#,###.##0", 1, false, false, null, null); // Attr4
+            UCRealgrid.AddColumn("ATTR5", "<%=lang.word["ATTR5"]%>", 150, "#,###.##0", 1, false, false, null, null); // Attr5
+
+            UCRealgrid.AddColumn("MODIFIED_VALUE", "<%=lang.word["USED AMOUNT"]%>", 150, "#,###.####0", 1, true, true, null, null); // 사용량
+            UCRealgrid.AddColumn("COST", "<%=lang.word["Unit Price"]%>", 80, "#,##0.#", 1, false, true, null, null); // 단가
+            UCRealgrid.AddColumn("LAST_TXN_USER", "<%=lang.word["Update User"]%>", 150, "center", 4, false, true, null, null); // 수정자
+            UCRealgrid.AddColumn("LAST_TXN_TIME", "<%=lang.word["UPDDTTM"]%>", 250, "center", 4, false, true, null, null); // 수정일시
+            UCRealgrid.AddColumn("MODIFY_YN", "<%=lang.word["MODIFY_YN"]%>", 250, "center", 4, false, false, null, null); // MODIFY_YN
+            if (code == "init")
+                UCRealgrid.InitGrid("<%=ViewState["MENU_ID"].ToString()%>", true, true, true);
+             else
+                UCRealgrid.InitGridControl(true, true, true);
+            //UCRealgrid_gridView.setColumnProperty("USEDATE", "styles", { textAlignment: "center", datetimeFormat: "yyyy-MM-dd" });
+            //UCRealgrid_gridView.setColumnProperty("USEDATE", "editable", true);
+            //UCRealgrid_gridView.setColumnProperty("USEDATE", "editor", {
+            //          type: "date"
+            //        , datetimeFormat: "yyyy-MM-dd"
+            //        , commitOnSelect: true
+            //        , textReadOnly: "true"
+            //});         
+            UCRealgrid_gridView.setCheckBar({
+                visible: true
+            });
+
+            UCRealgrid_gridView.onItemChecked = function (grid, itemIndex, checked) {
+                if (typeof UCRealgrid_gridView != "undefined") {
+                    UCRealgrid_ItemChecked(grid, itemIndex, checked);
+                }
+            };
+            UCRealgrid_gridView.onCellEdited = function (grid, itemIndex, dataRow, field) {
+                UCRealgrid_gridView.checkItem(itemIndex, true, false);
+                SetButtonSave(true);
+                UCRealgrid_gridView.commit();
+            };
+        }
+
+        function gridColSet(code) {
+            if (null == UCRealgrid.COLUMNS || UCRealgrid.COLUMNS.length == 0) return;
+            UCRealgrid_dataProvider.clearRows();
+            if (code == "PC") //소성용기사용
+            {
+                UCRealgrid_gridView.setColumnProperty("SEPARATION_TYPE", "header", { text: "<%=lang.word["ERP/MDM CODE"]%>" });
+                UCRealgrid_gridView.setColumnProperty("SEPARATION_TYPE_NAME", "header", { text: "<%=lang.word["HALL/MIN Classfication"]%>" });
+                UCRealgrid_gridView.setColumnProperty("MODIFIED_VALUE", "header", { text: "<%=lang.word["USED AMOUNT"]%>" });
+
+                // C20220623-000071 2022.07.05 강민규 Capa 추가
+                UCRealgrid_gridView.setColumnProperty("ATTR1", "visible", false);
+                UCRealgrid_gridView.setColumnProperty("ATTR2", "visible", false);
+                UCRealgrid_gridView.setColumnProperty("ATTR3", "visible", false);
+                UCRealgrid_gridView.setColumnProperty("ATTR4", "visible", false);
+                UCRealgrid_gridView.setColumnProperty("ATTR5", "visible", false);
+
+                UCRealgrid_gridView.setColumnProperty("UNIT", "visible", false);
+                UCRealgrid_gridView.setColumnProperty("SEPARATION_TYPE", "visible", false);
+                UCRealgrid_gridView.setColumnProperty("COST", "visible", false);
+
+                // 2023.10.05 정다운 제품코드 추가
+                UCRealgrid_gridView.setColumnProperty("PRODID", "visible", false);
+                UCRealgrid_gridView.setColumnProperty("PRODNAME", "visible", false);
+
+            } else if (code == "PQ") {
+                UCRealgrid_gridView.setColumnProperty("SEPARATION_TYPE", "header", { text: "<%=lang.word["Classification CODE"]%>" });
+                UCRealgrid_gridView.setColumnProperty("SEPARATION_TYPE_NAME", "header", { text: "<%=lang.word["Classification"]%>" });
+                UCRealgrid_gridView.setColumnProperty("MODIFIED_VALUE", "header", { text: "<%=lang.word["PROD_QTY"]%>" }); // 컬럼명 변경: 사용량 -> 생산량
+
+                // C20220623-000071 2022.07.05 강민규 Capa 추가
+                UCRealgrid_gridView.setColumnProperty("ATTR1", "visible", false);
+                UCRealgrid_gridView.setColumnProperty("ATTR2", "visible", false);
+                UCRealgrid_gridView.setColumnProperty("ATTR3", "visible", false);
+                UCRealgrid_gridView.setColumnProperty("ATTR4", "visible", false);
+                UCRealgrid_gridView.setColumnProperty("ATTR5", "visible", false);
+
+                UCRealgrid_gridView.setColumnProperty("UNIT", "visible", false);
+                UCRealgrid_gridView.setColumnProperty("SEPARATION_TYPE", "visible", false);
+                UCRealgrid_gridView.setColumnProperty("COST", "visible", false);
+
+                // 2023.10.05 정다운 제품코드 추가
+                UCRealgrid_gridView.setColumnProperty("PRODID", "visible", false);
+                UCRealgrid_gridView.setColumnProperty("PRODNAME", "visible", false);
+
+            } else if (code == "SD") {
+                UCRealgrid_gridView.setColumnProperty("SEPARATION_TYPE", "header", { text: "<%=lang.word["Classification CODE"]%>" });
+                UCRealgrid_gridView.setColumnProperty("SEPARATION_TYPE_NAME", "header", { text: "<%=lang.word["Classification"]%>" });
+                UCRealgrid_gridView.setColumnProperty("MODIFIED_VALUE", "header", { text: "<%=lang.word["Quantity of Subdivision"]%>" }); // 컬럼명 변경: 사용량 -> 소분량
+
+                // C20220623-000071 2022.07.05 강민규 Capa 추가
+                UCRealgrid_gridView.setColumnProperty("ATTR1", "visible", false);
+                UCRealgrid_gridView.setColumnProperty("ATTR2", "visible", false);
+                UCRealgrid_gridView.setColumnProperty("ATTR3", "visible", false);
+                UCRealgrid_gridView.setColumnProperty("ATTR4", "visible", false);
+                UCRealgrid_gridView.setColumnProperty("ATTR5", "visible", false);
+
+                UCRealgrid_gridView.setColumnProperty("UNIT", "visible", false);
+                UCRealgrid_gridView.setColumnProperty("SEPARATION_TYPE", "visible", false);
+                UCRealgrid_gridView.setColumnProperty("COST", "visible", false);
+
+                // 2023.10.05 정다운 제품코드 추가
+                UCRealgrid_gridView.setColumnProperty("PRODID", "visible", true);
+                UCRealgrid_gridView.setColumnProperty("PRODNAME", "visible", true);
+
+            } else if (code == "MS") {
+                UCRealgrid_gridView.setColumnProperty("SEPARATION_TYPE", "header", { text: "<%=lang.word["PRODID"]%>" });
+                UCRealgrid_gridView.setColumnProperty("SEPARATION_TYPE_NAME", "header", { text: "<%=lang.word["PRODNAME"]%>" });
+                UCRealgrid_gridView.setColumnProperty("ATTR1", "header", { text: "<%=lang.word["Plan Qty"]%>" }); // C20220726-000547 2022.08.01 강민규 계획량 컬럼 추가
+                UCRealgrid_gridView.setColumnProperty("MODIFIED_VALUE", "header", { text: "<%=lang.word["Input Quantity"]%>" }); // 컬럼명 변경: 사용량 -> 투입량
+
+                // C20220623-000071 2022.07.05 강민규 Capa 추가
+                UCRealgrid_gridView.setColumnProperty("ATTR1", "visible", true); //	C20220726-000547 2022.08.01 강민규 계획량 컬럼 추가 (false -> true 변경)
+                UCRealgrid_gridView.setColumnProperty("ATTR2", "visible", false);
+                UCRealgrid_gridView.setColumnProperty("ATTR3", "visible", false);
+                UCRealgrid_gridView.setColumnProperty("ATTR4", "visible", false);
+                UCRealgrid_gridView.setColumnProperty("ATTR5", "visible", false);
+
+                UCRealgrid_gridView.setColumnProperty("UNIT", "visible", false);
+                UCRealgrid_gridView.setColumnProperty("SEPARATION_TYPE", "visible", true);
+                UCRealgrid_gridView.setColumnProperty("COST", "visible", false);
+
+                // 2023.10.05 정다운 제품코드 추가
+                UCRealgrid_gridView.setColumnProperty("PRODID", "visible", false);
+                UCRealgrid_gridView.setColumnProperty("PRODNAME", "visible", false);
+
+            } else if (code == "CA") { // C20220623-000071 2022.07.05 강민규 Capa 추가
+                UCRealgrid_gridView.setColumnProperty("ATTR1", "header", { text: "<%=lang.word["RHK Quantity"]%>" }); // RHK 수
+                UCRealgrid_gridView.setColumnProperty("ATTR2", "header", { text: "<%=lang.word["RHK Length"]%>" }); // RHK 길이
+                UCRealgrid_gridView.setColumnProperty("ATTR3", "header", { text: "<%=lang.word["Container Quantity"]%>" }); // 용기 수
+                UCRealgrid_gridView.setColumnProperty("ATTR4", "header", { text: "<%=lang.word["Container Width"]%>" }); // 용기너비
+                UCRealgrid_gridView.setColumnProperty("ATTR5", "header", { text: "<%=lang.word["Roll Speed"]%>" }); // 롤 속도
+
+                UCRealgrid_gridView.setColumnProperty("SEPARATION_TYPE", "header", { text: "<%=lang.word["PRODID"]%>" }); //생산제품코드
+                UCRealgrid_gridView.setColumnProperty("SEPARATION_TYPE_NAME", "header", { text: "<%=lang.word["PRODNAME"]%>" }); //생산제품명
+                UCRealgrid_gridView.setColumnProperty("MODIFIED_VALUE", "header", { text: "<%=lang.word["Quantity of Subdivision"]%>" }); // 컬럼명 변경: 사용량 -> 소분량
+
+                // C20220623-000071 2022.07.05 강민규 Capa 추가
+                UCRealgrid_gridView.setColumnProperty("ATTR1", "visible", true);
+                UCRealgrid_gridView.setColumnProperty("ATTR2", "visible", true);
+                UCRealgrid_gridView.setColumnProperty("ATTR3", "visible", true);
+                UCRealgrid_gridView.setColumnProperty("ATTR4", "visible", true);
+                UCRealgrid_gridView.setColumnProperty("ATTR5", "visible", true);
+
+                UCRealgrid_gridView.setColumnProperty("UNIT", "visible", false);
+                UCRealgrid_gridView.setColumnProperty("SEPARATION_TYPE", "visible", true);
+                UCRealgrid_gridView.setColumnProperty("COST", "visible", false);
+
+                // 2023.10.05 정다운 제품코드 추가
+                UCRealgrid_gridView.setColumnProperty("PRODID", "visible", false);
+                UCRealgrid_gridView.setColumnProperty("PRODNAME", "visible", false);
+
+            }
+            else if (code == "OA") {
+                UCRealgrid_gridView.setColumnProperty("SEPARATION_TYPE", "header", { text: "<%=lang.word["Classification CODE"]%>" });
+                UCRealgrid_gridView.setColumnProperty("SEPARATION_TYPE_NAME", "header", { text: "<%=lang.word["Classification"]%>" });
+                UCRealgrid_gridView.setColumnProperty("MODIFIED_VALUE", "header", { text: "<%=lang.word["USED AMOUNT"]%>" });
+                UCRealgrid_gridView.setColumnProperty("UNIT", "header", { text: "<%=lang.word["UNIT"]%>" }); // 2023-10-11 정다운 단위 추가
+
+                UCRealgrid_gridView.setColumnProperty("ATTR1", "visible", false);
+                UCRealgrid_gridView.setColumnProperty("ATTR2", "visible", false);
+                UCRealgrid_gridView.setColumnProperty("ATTR3", "visible", false);
+                UCRealgrid_gridView.setColumnProperty("ATTR4", "visible", false);
+                UCRealgrid_gridView.setColumnProperty("ATTR5", "visible", false);
+
+                UCRealgrid_gridView.setColumnProperty("UNIT", "visible", true);
+                UCRealgrid_gridView.setColumnProperty("SEPARATION_TYPE", "visible", true);
+                UCRealgrid_gridView.setColumnProperty("COST", "visible", true);
+
+                // 2023.10.05 정다운 제품코드 추가
+                UCRealgrid_gridView.setColumnProperty("PRODID", "visible", true);
+                UCRealgrid_gridView.setColumnProperty("PRODNAME", "visible", true);
+            }
+            else { //EE
+                UCRealgrid_gridView.setColumnProperty("SEPARATION_TYPE", "header", { text: "<%=lang.word["Classification CODE"]%>" });
+                UCRealgrid_gridView.setColumnProperty("SEPARATION_TYPE_NAME", "header", { text: "<%=lang.word["Classification"]%>" });
+                UCRealgrid_gridView.setColumnProperty("MODIFIED_VALUE", "header", { text: "<%=lang.word["USED AMOUNT"]%>" });
+                UCRealgrid_gridView.setColumnProperty("UNIT", "header", { text: "<%=lang.word["UNIT"]%>" }); // 2023-10-11 정다운 단위 추가
+
+                UCRealgrid_gridView.setColumnProperty("ATTR1", "visible", false);
+                UCRealgrid_gridView.setColumnProperty("ATTR2", "visible", false);
+                UCRealgrid_gridView.setColumnProperty("ATTR3", "visible", false);
+                UCRealgrid_gridView.setColumnProperty("ATTR4", "visible", false);
+                UCRealgrid_gridView.setColumnProperty("ATTR5", "visible", false);
+
+                UCRealgrid_gridView.setColumnProperty("UNIT", "visible", false);
+                UCRealgrid_gridView.setColumnProperty("SEPARATION_TYPE", "visible", true);
+                UCRealgrid_gridView.setColumnProperty("COST", "visible", true);
+
+                // 2023.10.05 정다운 제품코드 추가
+                UCRealgrid_gridView.setColumnProperty("PRODID", "visible", true);
+                UCRealgrid_gridView.setColumnProperty("PRODNAME", "visible", true);
+            }
+}
+
+        function UCRealgrid_ItemChecked(grid, itemIndex, checked) {
+            var sel = { startItem: itemIndex, endItem: itemIndex, style: "rows" };
+            UCRealgrid_gridView.setSelection(sel);
+
+            SetButtonSave(true);
+
+        }
+
+        function SetButtonSave(benable) {
+            SetButtonEnable("#btnSave", benable);
+        }
+
+//제품 코드 조회
+        function ShowProductPopup(row, field, product) {
+            ShowPopup("../GMES_COM/GMES_COM_0003.aspx?PROD_SEARCH=" + product, 790, 500, '<%=lang.word["Drawing No."]%>' + '<%=lang.word["Search"]%>', SetProductName);
+        }
+
+        function SetProductName(data) {
+            if (data == undefined) return;
+            //if (data.length != 3) return;
+            if (data.length < 3) return; //2022.05.26 황유라 txtProductGroup 객체 없음, 주석처리
+
+            //data[0];//Part No
+            //data[1];//제품명
+            //data[2];//제품코드
+
+            var current = UCRealgrid_gridView.getCurrent();
+            var row = current.dataRow;
+            var field = current.fieldIndex;
+
+
+            //제품 입력 도중 입력 커서가 바뀌어도 정확한 위치에 기입될 수 있도록 위치 강제
+            if ($('#cboMeasureItem').combobox('getValue') == "MS") {
+                var productField = 8;
+                field = productField;
+            }
+            else if ($('#cboMeasureItem').combobox('getValue') == "CA") {
+                var productField = 8;
+                field = productField;
+            }
+
+            //$("#txtProductName").textbox("setValue", data[1]);
+            //$("#txtProduct").textbox("setValue", data[2]);
+            //UCRealgrid_dataProvider.setValue(row, field - 1, data[1]);
+            //UCRealgrid_dataProvider.setValue(row, field, data[2]);
+
+            UCRealgrid_dataProvider.setValue(row, field - 1, data[2]);
+            UCRealgrid_dataProvider.setValue(row, field, data[1]);
+        }
+
+        //행추가
+        function ButtonClick_Add(obj) {
+
+            var _msg = "<%=lang.message["25068"]%>";
+            var _areaId = $('#cboArea').combobox('getValue');
+            var _lineId = $('#cboLine').combobox('getValue');
+            var selectDay = window.sessionStorage.getItem("dtDate").split('-');
+            selectDay[1] = Number(selectDay[1]) - 1;
+            var firstDay = new Date(selectDay[0], selectDay[1], 1);
+            var lastDay = new Date(firstDay.getFullYear(), Number(firstDay.getMonth()) + 1, 0);
+            if (_areaId == undefined || _areaId == "") {
+                _msg = _msg.replace("%1", '<%=lang.word["Shop/Area"]%>');
+                xAlert(_msg);
+                return;
+            }
+
+            if (_lineId == undefined || _lineId == "") {
+                _msg = _msg.replace("%1", '<%=lang.word["Line/Equipment Seg."]%>');
+                xAlert(_msg);
+                return;
+            }
+
+            //session 값이 없으면(마감 정보가 없으면 만 한달간 생성, 수정, 삭제 가능)
+            var WipClose = window.sessionStorage.getItem("WipClose");
+            var now = new Date();
+            var toDay = new Date(now.getFullYear(), now.getMonth(), 1);
+            if (WipClose.length == 0) {
+                var searchDate = new Date(selectDay[0], selectDay[1], 1);
+                //조회한 월(月)이 오늘 월보다 이전 월이면 일자 입력란의 시작 일(日)을 오늘과 같은 일로 바꾼다.
+                if (searchDate < toDay) {
+                    firstDay = new Date(selectDay[0], selectDay[1], now.getDate());
+                }
+            }
+
+            UCRealgrid_gridView.onCurrentRowChanged = function (grid, oldRow, newRow) {
+                var curr = grid.getCurrent();
+                var columns = grid.getColumnNames();
+                var rowState = newRow > -1 ? UCRealgrid_dataProvider.getRowState(newRow) : "";
+                var editable = (newRow == -1 && curr.itemIndex > -1) || (rowState == "created");
+                //alert(editable);
+                //grid.setEditOptions({
+                //    "editable": editable
+                //});
+
+                //신규행이 아니면 전체 컬럼 editable : false
+                //if (!editable) {
+                //    columns.foreach(function (obj) {
+                //        grid.setColumnProperty(obj, "editable", false)
+                //    });
+                //    //수정가능한 컬럼 설정
+                //    var val1 = dataProvider.getValue(newRow, "field1");
+                //    columns = ["MODIFIED_VALUE"];
+                //}
+
+                if ($('#cboMeasureItem').combobox('getValue') == "EE") {
+                    grid.setColumnProperty("SEPARATION_TYPE_NAME", "editor", {
+                        type: "dropDown"
+                     , dropDownCount: 15
+                     , lookupDisplay: true
+                     , values: EeValue
+                     , labels: EeLabel
+                    });
+                    grid.setColumnProperty("UNIT", "editor", {
+                        type: "dropDown"
+                        , dropDownCount: 2
+                        , lookupDisplay: true
+                        , values: UnitValue
+                        , labels: UnitLabel
+                    });
+
+                    grid.setColumnProperty("UNIT", "editable", editable);
+                    grid.setColumnProperty("SEPARATION_TYPE_NAME", "editable", editable);
+                    grid.setColumnProperty("PRODID", "editable", editable);
+
+                    UCRealgrid_gridView.onGetEditValue = function (grid, index, editResult) {
+                        if (index.fieldIndex == 9 && $('#cboMeasureItem').combobox('getValue') == "EE") {
+                            ShowProductPopup(index.dataRow, index.fieldIndex, editResult["value"]);
+                        }
+                    };
+                    grid.setColumnProperty("PRODID", "editor", {
+                        type: "line"
+                    });
+                    grid.setColumnProperty("PRODID", "editable", editable);
+                    grid.setColumnProperty("MODIFIED_VALUE", "editable", editable);
+                }
+                else if ($('#cboMeasureItem').combobox('getValue') == "OA") {
+                    grid.setColumnProperty("SEPARATION_TYPE_NAME", "editor", {
+                        type: "dropDown"
+                     , dropDownCount: 3
+                     , lookupDisplay: true
+                     , values: OaValue
+                     , labels: OaLabel
+                    });
+                    grid.setColumnProperty("UNIT", "editor", {
+                        type: "dropDown"
+                        , dropDownCount: 2
+                        , lookupDisplay: true
+                        , values: UnitValue
+                        , labels: UnitLabel
+                    });
+
+                    grid.setColumnProperty("UNIT", "editable", editable);
+                    grid.setColumnProperty("SEPARATION_TYPE_NAME", "editable", editable);
+                    grid.setColumnProperty("PRODID", "editable", editable);
+                    grid.setColumnProperty("MODIFIED_VALUE", "editable", editable);
+
+                    UCRealgrid_gridView.onGetEditValue = function (grid, index, editResult) {
+                        if (index.fieldIndex == 9 && $('#cboMeasureItem').combobox('getValue') == "OA") {
+                            ShowProductPopup(index.dataRow, index.fieldIndex, editResult["value"]);
+                        }
+                    };
+                }
+
+                else if ($('#cboMeasureItem').combobox('getValue') == "PC") {
+                    if ($("[id$=hidShopID]").val() == "H010") {
+                        grid.setColumnProperty("SEPARATION_TYPE_NAME", "editor", {
+                            type: "dropDown"
+                     , dropDownCount: 13
+                     , lookupDisplay: true
+                     , values: PcValue_IK
+                     , labels: PcLabel_IK
+                     , commitOnSelect: true
+                        });
+                        grid.setColumnProperty("SEPARATION_TYPE_NAME", "editable", editable);
+                    } else {
+                        grid.setColumnProperty("SEPARATION_TYPE_NAME", "editor", {
+                            type: "dropDown"
+                         , dropDownCount: 13
+                         , lookupDisplay: true
+                         , values: PcValue
+                         , labels: PcLabel
+                         , commitOnSelect: true
+                        });
+                        grid.setColumnProperty("SEPARATION_TYPE_NAME", "editable", editable);
+                        grid.setColumnProperty("MODIFIED_VALUE", "editable", editable);
+
+                    }
+                }
+                else if ($('#cboMeasureItem').combobox('getValue') == "PQ") {
+                    grid.setColumnProperty("SEPARATION_TYPE_NAME", "editor", {
+                        type: "dropDown"
+                     , dropDownCount: 15
+                     , lookupDisplay: true
+                     , values: PQValue
+                     , labels: PQLabel
+                    });
+                    grid.setColumnProperty("SEPARATION_TYPE_NAME", "editable", editable);
+                    grid.setColumnProperty("MODIFIED_VALUE", "editable", editable);
+
+                }
+                else if ($('#cboMeasureItem').combobox('getValue') == "SD") {
+                    grid.setColumnProperty("SEPARATION_TYPE_NAME", "editor", {
+                        type: "dropDown"
+                     , dropDownCount: 2
+                     , lookupDisplay: true
+                     , values: EquipValue
+                     , labels: EquipLabel
+                    });
+                    UCRealgrid_gridView.onGetEditValue = function (grid, index, editResult) {
+                        if (index.fieldIndex == 9 && $('#cboMeasureItem').combobox('getValue') == "SD") {
+                            ShowProductPopup(index.dataRow, index.fieldIndex, editResult["value"]);
+                        }
+                    };
+                    grid.setColumnProperty("SEPARATION_TYPE_NAME", "editable", editable);
+                    grid.setColumnProperty("MODIFIED_VALUE", "editable", editable);
+
+                }
+                else if ($('#cboMeasureItem').combobox('getValue') == "MS") {
+                    grid.setColumnProperty("SEPARATION_TYPE_NAME", "editor", {
+                        type: "line" //기본 편집기 default값
+                    });
+                    UCRealgrid_gridView.onGetEditValue = function (grid, index, editResult) {
+                        if (index.fieldIndex == 7 && $('#cboMeasureItem').combobox('getValue') == "MS") {
+                            ShowProductPopup(index.dataRow, index.fieldIndex, editResult["value"]);
+                        }
+                    };
+                    grid.setColumnProperty("SEPARATION_TYPE_NAME", "editable", editable);
+                    grid.setColumnProperty("MODIFIED_VALUE", "editable", editable);
+
+                    grid.setColumnProperty("ATTR1", "editable", editable); //	C20220726-000547 2022.08.01 강민규 계획량 컬럼 추가(계획량에 값 입력할 수 있도록 editable 추가)
+                }// C20220623-000071 2022.07.05 강민규 Capa 추가
+                else if ($('#cboMeasureItem').combobox('getValue') == "CA") {
+                    grid.setColumnProperty("SEPARATION_TYPE_NAME", "editor", {
+                        type: "line" //기본 편집기 default값
+                    });
+                    UCRealgrid_gridView.onGetEditValue = function (grid, index, editResult) {
+                        if (index.fieldIndex == 7 && $('#cboMeasureItem').combobox('getValue') == "CA") {
+                            ShowProductPopup(index.dataRow, index.fieldIndex, editResult["value"]);
+                        }
+                    };
+                    grid.setColumnProperty("SEPARATION_TYPE_NAME", "editable", editable);
+                    grid.setColumnProperty("ATTR1", "editable", editable);
+                    grid.setColumnProperty("ATTR2", "editable", editable);
+                    grid.setColumnProperty("ATTR3", "editable", editable);
+                    grid.setColumnProperty("ATTR4", "editable", editable);
+                    grid.setColumnProperty("ATTR5", "editable", editable);
+                    grid.setColumnProperty("MODIFIED_VALUE", "editable", editable);
+
+                }
+
+                grid.setColumnProperty("USEDATE", "styles", { textAlignment: "center", datetimeFormat: "yyyy-MM-dd" });
+                grid.setColumnProperty("USEDATE", "editor", {
+                    type: "date"
+                       , datetimeFormat: "yyyy-MM-dd"
+                       , commitOnSelect: true
+                       , minDate: firstDay.getFullYear() + "-" + ((firstDay.getMonth() < 9 ? "0" : "") + Number(firstDay.getMonth() + 1)) + "-" + ((firstDay.getDate() < 10 ? "0" : "") + firstDay.getDate())
+                       , maxDate: lastDay.getFullYear() + "-" + ((lastDay.getMonth() < 9 ? "0" : "") + Number(lastDay.getMonth() + 1)) + "-" + ((lastDay.getDate() < 10 ? "0" : "") + lastDay.getDate())
+                       , textReadOnly: "true"
+                });
+
+                grid.setColumnProperty("USEDATE", "editable", editable);
+                grid.setColumnProperty("MODIFIED_VALUE", "editable", editable);
+                grid.setColumnProperty("COST", "editable", editable);
+
+                grid.onEditCommit = function (grid, index, oldValue, newValue) {
+                    if (index.fieldName === "EQSGID") {
+                        changeEQSG(index.itemIndex, newValue);
+                        if (oldValue !== newValue) {
+                            grid.setValue(index, "EQSGID", "EqsgValue");
+                        }
+                    }
+                    else if (index.fieldName === "UTILCATCODE4") {
+                        changePC(index.itemIndex, newValue);
+                        if (oldValue !== newValue) {
+                            grid.setValue(index, "UTILCATCODE4", "newValue");
+                        }
+                    }
+                }
+            }
+
+            var today = new Date();
+            var sInitTodayVal = firstDay.getFullYear() + "-" + ((firstDay.getMonth() < 9 ? "0" : "") + Number(firstDay.getMonth() + 1)) + "-" + ((firstDay.getDate() < 10 ? "0" : "") + firstDay.getDate());
+            //var sInitTodayVal = today.getFullYear() + "-" + ((today.getMonth() < 9 ? "0" : "") + Number(today.getMonth() + 1)) + "-" + ((today.getDate() < 10 ? "0" : "") + today.getDate());
+
+            var values = {
+
+                AREAID: $('#cboArea').combobox('getValue')
+               , AREANAME: $('#cboArea').combobox('getText')
+               , EQSGID: $('#cboLine').combobox('getValue')
+               , EQSGNAME: $('#cboLine').combobox('getText')
+               , UTILID: $('#cboMeasureItem').combobox('getValue')
+               , UTILNAME: $('#cboMeasureItem').combobox('getText')
+                //, SEPARATION_TYPE: ""
+               , SEPARATION_TYPE_NAME: ""
+               , USEDATE: sInitTodayVal
+               , MODIFIED_VALUE: 0
+               , COST: 0
+            };
+
+            var rowNo = UCRealgrid.GetRowCount();
+            UCRealgrid_dataProvider.insertRow(rowNo, values);
+        }
+
+//선택 행 수정(사용x)
+        function ButtonClick_Modify(obj) {
+            var rowDatas = [];
+            var items = [];
+            var subitems = [];
+            var chkRows = UCRealgrid_gridView.getCheckedRows();
+
+            UCRealgrid_gridView.setColumnProperty("MODIFIED_VALUE", "editable", true);
+
+            //for (var i in chkRows) {
+            //    var data = UCRealgrid_dataProvider.getJsonRow(chkRows[i]);
+            //    rowDatas.push(data);
+            //};
+        }
+
+// 홀/민 구분 드롭다운 선택
+        function changePC(itemIndex, MTRLID) {
+            var items = [];
+
+            items = [
+                         { name: "LANGID", value: '<%=SSUser.LangID%>', dataType: _DataType.String }
+                                , { name: "MTRLID", value: MTRLID, dataType: _DataType.String }
+            ];
+
+            var param = {};
+            param.bizID = "DA_IM_SEL_PC_LIST";
+            param.items = items;
+            param.inTableNames = 'RQSTDT';
+            param.outTableNames = 'RSLTDT';
+
+            var url = "/GMES_IM_POM/GMES_IMES_0240.aspx/GetData";
+            sendRequestMethod(function () {
+                if (data != null) {
+                    if (data[0].RETURN != "OK") {
+                        UCRealgrid_dataProvider.setValue(itemIndex, "UTILCATCODE3", data[0].MTRLNAME);
+                        return;
+                    };
+                };
+            }, param, "POST", url);
+        }
+
+// 라인실 드롭다운 선택
+        function changeEQSG(itemIndex, EQSGID) {
+            var items = [];
+
+            items = [
+                         { name: "LANGID", value: '<%=SSUser.LangID%>', dataType: _DataType.String }
+                                        , { name: "EQSGID", value: EQSGID, dataType: _DataType.String }
+            ];
+
+            var param = {};
+            param.bizID = "DA_IM_BAS_SEL_EQUIPMENTSEGMENT_TBL";
+            param.items = items;
+            param.inTableNames = 'RQSTDT';
+            param.outTableNames = 'RSLTDT';
+
+            var url = "/GMES_IM_POM/GMES_IMES_0240.aspx/GetData";
+            sendRequestMethod(function () {
+                if (data != null) {
+                    if (data[0].RETURN != "OK") {
+                        UCRealgrid_dataProvider.setValue(itemIndex, "EQSGNAME", data[0].EQSGNAME);
+                        return;
+                    };
+                };
+            }, param, "POST", url);
+        }
+
+        function ButtonClick_Delete(obj) {
+
+            var chkRows = UCRealgrid_gridView.getCheckedRows();
+
+            for (var i = chkRows.length - 1; i >= 0; i--) {
+
+                if (UCRealgrid_dataProvider.getRowState(chkRows[i]) === "created") {
+                    UCRealgrid_dataProvider.setOptions({ softDeleting: false });
+                }
+                else {
+                    UCRealgrid_dataProvider.setOptions({ softDeleting: true });
+                    UCRealgrid_gridView.setOptions({ hideDeletedRows: true });
+                }
+                UCRealgrid_dataProvider.removeRow(chkRows[i]);
+            };
+            UCRealgrid_gridView.commit(true);
+            searchData();
+        }
+
+
+//조회버튼 클릭시 Biz 호출
+        function searchData() {
+            debugger;
+            var items = [];
+            var _msg = "<%=lang.message["25068"]%>";
+            var _areaId = $('#cboArea').combobox('getValue');
+            var _lineId = $('#cboLine').combobox('getValue');
+            var _processId = $('#cboMeasureItem').combobox('getValue');
+            //var _segmentId = $('#cboProcessSegment').combobox('getValue');
+            var _measureId = $('#cboMeasureItem').combobox('getValue');
+            var dtspin = $('#dtDate').datetimespinner('getValue').replace('-', '');
+
+            if (_lineId == "*") {
+                _lineId = null;
+            }
+<%--            if (_areaId == undefined || _areaId == "") {
+                _msg = _msg.replace("%1", '<%=lang.word["Shop/Area"]%>');
+                xAlert(_msg);
+                return;
+            }--%>
+
+            <%--            if (_gradeId == undefined || _gradeId == "") {
+                _msg = _msg.replace("%1", '<%=lang.word["Product Group"]%>');
+                xAlert(_msg);
+                return;
+            }
+             
+            if (_segmentId == undefined || _segmentId == "") {
+                _msg = _msg.replace("%1", "<%=lang.word["PROC_GROUP"]%>");
+                xAlert(_msg);
+                return;
+            }--%>
+            if (_measureId == undefined || _measureId == "") {
+                _msg = _msg.replace("%1", "<%=lang.word["Measure Item"]%>");
+                xAlert(_msg);
+                return;
+            }
+            <%--if (_lineId == undefined || _lineId == "") {
+                _msg = _msg.replace("%1", "<%=lang.word["Line/Equipment Seg."]%>");
+                xAlert(_msg);
+                return;
+            }--%>
+            <%--            if (_processId == undefined || _processId == "") {
+                _msg = _msg.replace("%1", "<%=lang.word["Operation"]%>");
+                xAlert(_msg);
+                return;
+            }--%>
+
+            items = [
+                         { name: "LANGID", value: '<%=SSUser.LangID%>', dataType: _DataType.String }
+                        , { name: "AREAID", value: $('#cboArea').combobox('getValue'), dataType: _DataType.String }
+                        , { name: "EQSGID", value: $('#cboLine').combobox('getValue'), dataType: _DataType.String }
+                        , { name: "SHOPID", value: '<%=SSUser.ShopID%>', dataType: _DataType.String }
+                        , { name: "DATA_TYPE", value: $('#cboMeasureItem').combobox('getValue'), dataType: _DataType.String }
+                        , { name: "DATE_MONTH", value: dtspin, dataType: _DataType.String }
+                        , { name: "MEASURE_YN", value: 'Y', dataType: _DataType.String }
+            ];
+
+            var param = {};
+            param.bizID = "BR_IM_LMS_SEL_RTY_INFO";
+            param.items = items;
+            param.inTableNames = 'INDATA';
+            param.outTableNames = 'OUTDATA';
+
+            var url = "/GMES_IM_POM/GMES_IMES_0240.aspx/GetData";
+            UCRealgrid.CallRequest(url, param);
+            UCRealgrid_gridView.setStyles({
+                body: {
+                    dynamicStyles: [
+                                {
+                                    criteria: "value['MODIFY_YN'] != 'N'",
+                                    styles: { background: "#FFFFFFFF" }
+                                },
+                                {
+                                    criteria: "value['MODIFY_YN'] = 'N'",
+                                    styles: { background: "#FFFEFFBB" }
+                                }]
+                }
+            });
+
+            setCloseMonth();
+        }
+
+        function DataDelete() {
+            var chk = UCRealgrid_gridView.getCheckedRows(true);
+
+            if (chk.length == 0) {
+                // message (10008) : 선택된 데이터가 없습니다.
+                xAlert('<%=lang.message["10008"]%>');
+                return;
+            }
+            else {
+                xConfirm('<%=lang.message["20010"]%>', DeleteData);
+                return;
+            }
+        }
+
+        function DeleteData(param) {
+            if (param) {
+                UCRealgrid.Commit(true);
+                chkDeleteProc(UCRealgrid_dataProvider, UCRealgrid_gridView);
+            }
+        }
+
+        function chkDeleteProc(UCRealgrid_dataProvider, UCRealgrid_gridView) {
+            var checkRows1 = UCRealgrid_gridView.getCheckedRows();
+            var deleteRows = [];
+            var items = [];
+            var subitems = [];
+            var param = {};
+            var index = 0;
+            var flag = false;
+            ShowLoading();
+            for (var i = 0; i < checkRows1.length ; i++) {
+                deleteRows.push(UCRealgrid_dataProvider.getJsonRow(checkRows1[i]));
+
+                //마감일이 지난 Data가 포함되어있으면 continue;
+                var currentJsonRow = UCRealgrid_dataProvider.getJsonRow(checkRows1[i]);
+                if (currentJsonRow.MODIFY_YN == "N") {
+                    flag = true;
+                    continue;
+                }
+
+                if (deleteRows[i].EQSGID == '*') {
+                    TempEQPTID = deleteRows[i].AREAID + '|' + deleteRows[i].EQSGID + '|' + deleteRows[i].SEPARATION_TYPE;
+                } else {
+                    TempEQPTID = deleteRows[i].EQSGID + '|' + deleteRows[i].SEPARATION_TYPE;
+                }
+
+                subitems[index] = [
+                    { name: "USEQTY", value: deleteRows[i].MODIFIED_VALUE, dataType: _DataType.String }
+                    , { name: "DATA_TYPE", value: $('#cboMeasureItem').combobox('getValue'), dataType: _DataType.String }
+                    , { name: "EQPTID", value: TempEQPTID, dataType: _DataType.String }
+                    , { name: "SEQ", value: '200', dataType: _DataType.String }
+                    , { name: "USEDATE", value: deleteRows[i].USEDATE, dataType: _DataType.String }
+                    , { name: "UNITCOST", value: deleteRows[i].COST, dataType: _DataType.String }
+                    , { name: "MES_FLAG", value: 'N', dataType: _DataType.String }
+                    , { name: "USERID", value: "<%=SSUser.UserID%>", dataType: _DataType.String }
+                    , { name: "PRODID", value: deleteRows[i].PRODID, dataType: _DataType.String }
+                    , { name: "AREAID", value: deleteRows[i].AREAID, dataType: _DataType.String } //2023.02.23 황유라 C20230223-000052 측정정보관리 4공장 삭제 기능 수정 件
+                ];
+                    index++;
+                };
+                items[0] = subitems;
+                param.bizID = "BR_IM_LMS_REG_MEASURE_DATA"; //  "DA_IM_LMS_UPD_MEASURE_DATA"; 비즈명변경  2021-10-19
+                param.items = items;
+                param.inTableNames = 'INDATA'; // 'RQSTDT'; 비즈명 변경화 함께 변경
+                param.outTableNames = '';
+                var url = "/GMES_IM_POM/GMES_IMES_0240.aspx/ExecuteData";
+                sendRequestMethod(function () {
+                    if (data != null) {
+                        if (data[0].RETURN != "OK") {
+                            xAlert(data[0].MESSAGE);
+                            CloseLoading();
+                            return;
+                        };
+                    };
+                    if (flag == true) {
+                        // message (290082) : 마감일이 지난 Data가 포함되어 있어 삭제를 진행할 수 없습니다.
+                        xAlert('<%=lang.message["290082"]%>');
+                    }
+                    else {
+                        xAlert('<%=lang.message["10022"]%>'); //삭제완료 메세지  
+                    }
+                    //InitGrid("init");
+                    searchData();
+                }, param, "POST", url);
+
+            }
+
+        function SaveData() {
+            UCRealgrid_gridView.commit();
+
+            var _measureId = $('#cboMeasureItem').combobox('getValue');
+            var createdRows = UCRealgrid_dataProvider.getStateRows("created");
+            var updatedRows = UCRealgrid_dataProvider.getStateRows("updated");
+            var url = "/GMES_IM_POM/GMES_IMES_0240.aspx/ExecuteData";
+            var currentJasonRow;
+            var param = {};
+            var items = [];
+            var subitems = [];
+            var _msg = "<%=lang.message["25068"]%>";
+            var seperationType;
+
+            //신규 생성
+            for (var i = 0; i < createdRows.length; i++) {
+                currentJasonRow = UCRealgrid_dataProvider.getJsonRow(createdRows[i]);
+                var currentJsonRow = UCRealgrid_dataProvider.getJsonRow(createdRows[i]);
+                if (currentJsonRow.MODIFY_YN == "N") {
+                    // message (290084) : 만료된 데이터는 저장할 수 없습니다.
+                    xAlert('<%=lang.message["290084"]%>');
+                    return;
+                }
+                if (currentJasonRow.AREANAME == "" || currentJasonRow.AREANAME == undefined) {
+                    _msg = _msg.replace("%1", '<%=lang.word["Shop/Area"]%>');
+                    xAlert(_msg);
+                    return;
+                }
+                if (currentJasonRow.EQSGNAME == "" || currentJasonRow.EQSGNAME == undefined) {
+                    _msg = _msg.replace("%1", '<%=lang.word["Line/Equipment Seg."]%>');
+                    xAlert(_msg);
+                    return;
+                }
+                if (_measureId == undefined || _measureId == "") {
+                    _msg = _msg.replace("%1", "<%=lang.word["Measure Item"]%>");
+                    xAlert(_msg);
+                    return;
+                }
+                if (currentJasonRow.SEPARATION_TYPE_NAME == "" || currentJasonRow.SEPARATION_TYPE_NAME == null) {
+                    // 입력된 row에 구분값이 없습니다.
+                    xAlert('<%=lang.message["290014"]%>');
+                    return;
+                }
+                if ($('#cboMeasureItem').combobox('getValue') == "MS" || $('#cboMeasureItem').combobox('getValue') == "CA") {
+                    seperationType = currentJasonRow.SEPARATION_TYPE;
+                    if (currentJasonRow.EQSGID == '*') {
+                        TempEQPTID = currentJasonRow.AREAID + '|' + currentJasonRow.EQSGID + '|' + currentJasonRow.SEPARATION_TYPE;
+                    } else {
+                        TempEQPTID = currentJasonRow.EQSGID + '|' + currentJasonRow.SEPARATION_TYPE;
+                    }
+                }
+                if (currentJasonRow.PRODID == "" || currentJasonRow.PRODID == null) {
+                    xAlert('<%= lang.message["255499"]%>')
+                    return;
+                }
+                else {
+                    if (currentJasonRow.EQSGID == '*') {
+                        TempEQPTID = currentJasonRow.AREAID + '|' + currentJasonRow.EQSGID + '|' + currentJasonRow.SEPARATION_TYPE_NAME;
+                    } else {
+                        TempEQPTID = currentJasonRow.EQSGID + '|' + currentJasonRow.SEPARATION_TYPE_NAME;
+                    }
+                    seperationType = currentJasonRow.SEPARATION_TYPE_NAME;
+                }
+
+                subitems[i] = [
+                { name: "SHOPID", value: $("[id$=hidShopID]").val(), dataType: _DataType.String }
+                    , { name: "AREAID", value: currentJasonRow.AREAID, dataType: _DataType.String }
+                    , { name: "EQSGID", value: currentJasonRow.EQSGID, dataType: _DataType.String }
+                    , { name: "EQPTID", value: TempEQPTID, dataType: _DataType.String }
+                    , { name: "DATA_TYPE", value: $('#cboMeasureItem').combobox('getValue'), dataType: _DataType.String }
+                    , { name: "PRODID", value: currentJasonRow.PRODID, dataType: _DataType.String }
+                    , { name: "PRODNAME", value: currentJasonRow.PRODNAME, dataType: _DataType.String }
+                    , { name: "SEPARATION_TYPE", value: seperationType, dataType: _DataType.String }
+                    , { name: "USEDATE", value: currentJasonRow.USEDATE, dataType: _DataType.String }
+                    , { name: "USEQTY", value: currentJasonRow.MODIFIED_VALUE, dataType: _DataType.String }
+                    , { name: "UNITCOST", value: currentJasonRow.COST, dataType: _DataType.String }
+                    , { name: "USERID", value: "<%=SSUser.UserID%>", dataType: _DataType.String }
+                    , { name: "UNITID", value: currentJasonRow.UNIT, dataType: _DataType.String }
+                    , { name: "ATTR1", value: currentJasonRow.ATTR1, dataType: _DataType.String }
+                    , { name: "ATTR2", value: currentJasonRow.ATTR2, dataType: _DataType.String }
+                    , { name: "ATTR3", value: currentJasonRow.ATTR3, dataType: _DataType.String }
+                    , { name: "ATTR4", value: currentJasonRow.ATTR4, dataType: _DataType.String }
+                    , { name: "ATTR5", value: currentJasonRow.ATTR5, dataType: _DataType.String }
+                ];
+            };
+
+            //수정 
+            //if (updatedRows.length > 1) {
+            //    xAlert('데이터를 확인 하세요');
+            //    searchData();
+            //    return;
+            //}
+            for (var i = 0; i < updatedRows.length; i++) {
+                currentJasonRow = UCRealgrid_dataProvider.getJsonRow(updatedRows[i]);
+                var currentJsonRow = UCRealgrid_dataProvider.getJsonRow(updatedRows[i]);
+
+                if (currentJsonRow.MODIFY_YN == "N") {
+                    // message (290084) : 만료된 데이터는 저장할 수 없습니다.
+                    xAlert('<%=lang.message["290084"]%>');
+                    return;
+                };
+                if (currentJasonRow.AREANAME == "" || currentJasonRow.AREANAME == undefined) {
+                    _msg = _msg.replace("%1", '<%=lang.word["Shop/Area"]%>');
+                    xAlert(_msg);
+                    return;
+                }
+                if (currentJasonRow.EQSGNAME == "" || currentJasonRow.EQSGNAME == undefined) {
+                    _msg = _msg.replace("%1", '<%=lang.word["Line/Equipment Seg."]%>');
+                    xAlert(_msg);
+                    return;
+                }
+                if (_measureId == undefined || _measureId == "") {
+                    _msg = _msg.replace("%1", "<%=lang.word["Measure Item"]%>");
+                    xAlert(_msg);
+                    return;
+                }
+                if (currentJasonRow.SEPARATION_TYPE_NAME == "" || currentJasonRow.SEPARATION_TYPE_NAME == null) {
+                    // 입력된 row에 구분값이 없습니다.
+                    xAlert('<%=lang.message["290014"]%>');
+                    return;
+                }
+
+                if ($('#cboMeasureItem').combobox('getValue') == "MS" || $('#cboMeasureItem').combobox('getValue') == "CA") {
+                    seperationType = currentJasonRow.SEPARATION_TYPE;
+                    if (currentJasonRow.EQSGID == '*') {
+                        TempEQPTID = currentJasonRow.AREAID + '|' + currentJasonRow.EQSGID + '|' + currentJasonRow.SEPARATION_TYPE;
+                    } else {
+                        TempEQPTID = currentJasonRow.EQSGID + '|' + currentJasonRow.SEPARATION_TYPE;
+                    }
+                }
+
+                if ($('#cboMeasureItem').combobox('getValue') == "PC") {
+                    seperationType = currentJasonRow.SEPARATION_TYPE;
+                    TempEQPTID = currentJasonRow.EQSGID + '|' + currentJasonRow.SEPARATION_TYPE;
+                }
+                if (currentJasonRow.PRODID == "" || currentJasonRow.PRODID == null) {
+                    xAlert('<%= lang.message["255499"]%>')
+                    return;
+                }
+
+                    
+                if ($('#cboMeasureItem').combobox('getValue') == "SD") {
+                    seperationType = currentJasonRow.SEPARATION_TYPE;
+                    TempEQPTID = currentJasonRow.EQSGID + '|' + currentJasonRow.SEPARATION_TYPE;
+                }
+                if (currentJasonRow.PRODID == "" || currentJasonRow.PRODID == null) {
+                    xAlert('<%= lang.message["255499"]%>')
+                    return;
+                }
+
+
+                else {
+                    if (currentJasonRow.EQSGID == '*') {
+                        TempEQPTID = currentJasonRow.AREAID + '|' + currentJasonRow.EQSGID + '|' + currentJasonRow.SEPARATION_TYPE_NAME;
+                    } else if ($('#cboMeasureItem').combobox('getValue') != "PC" && $('#cboMeasureItem').combobox('getValue') != "SD" ) {
+                        TempEQPTID = currentJasonRow.EQSGID + '|' + currentJasonRow.SEPARATION_TYPE_NAME;
+                    }
+                    seperationType = currentJasonRow.SEPARATION_TYPE_NAME;
+                    seperationType = seperationType.substr(1, 1);
+                }
+
+                subitems[i] = [
+                                    { name: "SHOPID", value: $("[id$=hidShopID]").val(), dataType: _DataType.String }
+                                        , { name: "AREAID", value: currentJasonRow.AREAID, dataType: _DataType.String }
+                                        , { name: "EQSGID", value: currentJasonRow.EQSGID, dataType: _DataType.String }
+                                        , { name: "EQPTID", value: TempEQPTID, dataType: _DataType.String }
+                                        , { name: "DATA_TYPE", value: $('#cboMeasureItem').combobox('getValue'), dataType: _DataType.String }
+                                        , { name: "PRODID", value: currentJasonRow.PRODID, dataType: _DataType.String }
+                                        , { name: "PRODNAME", value: currentJasonRow.PRODNAME, dataType: _DataType.String }
+                                        , { name: "SEPARATION_TYPE", value: seperationType, dataType: _DataType.String }
+                                        , { name: "USEDATE", value: currentJasonRow.USEDATE, dataType: _DataType.String }
+                                        , { name: "USEQTY", value: currentJasonRow.MODIFIED_VALUE, dataType: _DataType.String }
+                                        , { name: "UNITCOST", value: currentJasonRow.COST, dataType: _DataType.String }
+                                        , { name: "USERID", value: "<%=SSUser.UserID%>", dataType: _DataType.String }
+                                        , { name: "UNITID", value: currentJasonRow.UNIT, dataType: _DataType.String }
+                                        , { name: "ATTR1", value: currentJasonRow.ATTR1, dataType: _DataType.String }
+                                        , { name: "ATTR2", value: currentJasonRow.ATTR2, dataType: _DataType.String }
+                                        , { name: "ATTR3", value: currentJasonRow.ATTR3, dataType: _DataType.String }
+                                        , { name: "ATTR4", value: currentJasonRow.ATTR4, dataType: _DataType.String }
+                                        , { name: "ATTR5", value: currentJasonRow.ATTR5, dataType: _DataType.String }
+                ];
+
+            };
+            items[0] = subitems;
+            param.bizID = "BR_IM_PRD_REG_MEASREMENT";
+            param.items = items;
+            param.inTableNames = 'INDATA';
+            param.outTableNames = '';
+            sendRequestMethod(function () {
+                if (data != null) {
+                    if (data[0].RETURN != "OK") {
+                        xAlert(data[0].MESSAGE);
+                        CloseLoading();
+                        return;
+                    };
+                };
+                xAlert('<%=lang.message["10004"]%>'); //저장완료 메세지  
+                CloseLoading();
+                UCRealgrid_dataProvider.clearRows();
+                GridReset();
+                //InitGrid("init");
+                searchData();
+            }, param, "POST", url);
+        }
+
+        function GridReset() {
+
+            if (UCRealgrid.GetRowCount() > 0) {
+
+                //ucReasonRealgrid_gridView.commit();
+
+                CollapseSlideArea();
+
+                UCRealgrid_dataProvider.clearRows();
+            }
+        }
+
+        function UCRealgrid_LoadDataCompleted() {
+            $("#totalConunt").html("&nbsp;&nbsp;&nbsp;&nbsp;<%=lang.word["Search results"]%> ( Total <span class='red01'>" + UCRealgrid.GetRowCount() + "</span> Found ) ");
+        }
+
+        function buttonCheck(id) {
+
+            try {
+
+                switch (id) {
+                    case "btnExcelUpLoad":
+                        var tempMeasure = $('#cboMeasureItem').combobox('getValue'); // 측정 항목
+                        ShowPopup("../GMES_IM_POM/GMES_IMES_0240_1.aspx?PARAM=A" + "&tempMeasure=" + tempMeasure, 1300, 600, "EXCEL <%=lang.word["Upload"]%>", null);
+                            break;
+                        case "btnExcel":
+                            var tempMeasure = $('#cboMeasureItem').combobox('getValue'); // 측정 항목
+                            //==================================================================================================================================
+                            // "다운로드" 버튼 클릭 시
+                            if (UCRealgrid.GetRowCount() == 0) {
+                                // message (20051) : 조회내역이 존재하지 않습니다..
+                                xAlert('<%=lang.message["20051"]%>');
+                                return;
+                            }
+                            UCRealgrid.ExcelExport("" + tempMeasure + "_Excel_Download_Data");
+                            break;
+                        case "btnDel":
+                            DataDelete();
+                            break;
+                        case "btnSave":
+                            SaveData();
+                            break;
+                        default:
+                            break;
+                    }
+                } catch (e) {
+                    xAlert(e.message);
+                }
+            }
+
+    </script>
+
+</asp:Content>
+<%-- View --%>
+<asp:Content ID="UIContent" ContentPlaceHolderID="bodyHolder" runat="server">
+
+    <form id="form1" runat="server">
+        <asp:ScriptManager runat="server" ID="ScriptManager1"></asp:ScriptManager>
+        <asp:HiddenField ID="hidHeight" runat="server" />
+        <asp:HiddenField ID="hidUserID" runat="server" />
+        <asp:HiddenField ID="hidLoginuser" runat="server" />
+        <asp:HiddenField ID="hidAccessFlag" runat="server" />
+        <asp:HiddenField ID="hidLangID" runat="server" />
+        <asp:HiddenField ID="hidShopID" runat="server" />
+
+        <div class="tableInquiry searchBox" id="divSearchPart">
+            <div class="itemBox">
+                <table>
+                    <%--<colgroup>
+                        <col class="col_10p" />
+                        <col class="col_15p" />
+                        <col class="col_10p" />
+                        <col class="col_15p" />
+                        <col class="col_10p" />
+                        <col class="col_15p" />
+                        <col class="col_10p" />
+                        <col class="col_15p" />
+                        <col />
+                    </colgroup>--%>
+                    <tbody>
+                        <tr>
+                            <!-- 측정항목 -->
+                            <th><span class="textPink">*</span><%=lang.word["Measure Item"]%></th>
+                            <td>
+                                <select id="cboMeasureItem" class="easyui-combobox" style="width: 100%; max-width: 200px;" onchange="gridColSet( $('#cboMeasureItem').combobox('getValue'))" />
+                            </td>
+                            <!-- 공장/동 -->
+                            <th><%=lang.word["Shop/Area"]%></th>
+                            <td>
+                                <table class="tableShopArea">
+                                    <tr>
+                                        <td>
+                                            <input id="cboArea" class="easyui-combobox" style="width: 200px;" />
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td class="ProdGR">
+                                            <input id="cboGrade" class="easyui-combobox" style="width: 200px;" />
+                                        </td>
+                                    </tr>
+                                </table>
+                            </td>
+                            <!-- 공정군 -->
+                            <%--<th><span class="textPink"></span><%=lang.word["PROC_GROUP"]%></th>
+                            <td>
+                                <select id="cboProcessSegment" class="easyui-combobox" style="width: 100%; max-width: 200px;" />
+                            </td>--%>
+                            <!-- 라인/실 -->
+                            <th><%=lang.word["Line/Equipment Seg."]%></th>
+                            <td>
+                                <select id="cboLine" class="easyui-combobox" style="width: 100%; max-width: 200px;" />
+                            </td>
+                            <!-- 마감월 -->
+                            <th><span class="textPink">*</span><%=lang.word["CLOSING_MONTH"]%></th>
+                            <td>
+                                <input id="dtDate" class="easyui-datetimespinner" data-options="formatter:formatter2,parser:parser2,selections:[[0,4],[5,7]]" style="width: 100%; max-width: 200px;" />
+                            </td>
+                            <!-- 단위 -->
+                            <%--<th><%=lang.word["Unit"]%></th>
+                            <td>
+                                <select id="cboUnit" class="easyui-combobox" style="width: 100%; max-width: 200px;" />
+                            </td>--%>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            <div class="tableBtnSearch">
+                <button type="button" id="btnSearch" onclick="javascript:searchData()"><span><%=lang.word["SEARCH"]%></span></button>
+            </div>
+            <uc:SearchToggleContent ID="SearchToggleContent2" runat="server" />
+            <div class="clear"></div>
+        </div>
+        <div class="buttonArea" id="divMidButton">
+            <div id="totalConunt" class="floatLeft01">&nbsp;&nbsp;&nbsp;&nbsp;<%=lang.word["Search results"]%> ( Total <span class='red01'>0</span> Found ) </div>
+            <ul id="ulBttomButton" runat="server" class="btn_crud">
+                <!-- 행추가 삭제-->
+                <li><a class="row_add" id="btnRowAdd" onclick="ButtonClick_Add(this)"></a></li>
+                <li><a class="row_del" id="btnRowDelete" onclick="ButtonClick_Delete(this)"></a></li>
+
+                <!-- 테이블 저장 삭제 -->
+                <li><a class="table_bar"></a></li>
+                <li><a class="save" id="btnSave" onclick="buttonCheck(this.id)"><span><%=lang.word["Save"]%></span></a></li>
+                <li><a class="red" id="btnDel" onclick="buttonCheck(this.id)"><span><%=lang.word["Delete"]%></span></a></li>
+
+                <li><a class="table_bar"></a></li>
+                <li><a class="save" id="btnExcelUpLoad" onclick="buttonCheck(this.id)"><span>EXCEL <%=lang.word["Upload"]%></span></a></li>
+                <!--Excel 업로드 -->
+                <li><a class="table_bar"></a></li>
+                <li><a class="excel" id="btnExcel" onclick="buttonCheck(this.id)"></a></li>
+            </ul>
+        </div>
+        <div id="divMasterGrid" class="table">
+            <uc:Realgrid ID="UCRealgrid" CALLID="UCRealgrid" HEIGHT="690" LAYOUTSAVING="Y" runat="server" />
+        </div>
+        <div id="div_disabled" class="parentDisable" style="display: none"></div>
+        <div id="div_popup" class="winPop dvMinheight" style="width: 400px; height: 350px; display: none"></div>
+    </form>
+</asp:Content>

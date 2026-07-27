@@ -1,0 +1,48 @@
+@import "tailwindcss";
+
+:root {
+  /* Microsoft Fluent / Outlook color tokens */
+  --ms-blue: #0078d4;
+  --ms-blue-dark: #106ebe;
+  --ms-blue-light: #deecf9;
+
+  --surface: #ffffff;
+  --surface-subtle: #f3f2f1;
+
+  --text-primary: #323130;
+  --text-secondary: #605e5c;
+  --text-disabled: #a19f9d;
+
+  --border: #e1dfdd;
+  --border-subtle: #edebe9;
+
+  --background: var(--surface);
+  --foreground: var(--text-primary);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--surface);
+  color: var(--text-primary);
+  font-family: "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+}

@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx tsc *)",
+      "Bash(npx next *)",
+      "Bash(npm install *)",
+      "Bash(npx eslint *)",
+      "Bash(git -C \"C:/Users/63200784/Desktop/hiudwc/hdt\" status --short)"
+    ]
+  }
+}

@@ -1,0 +1,398 @@
+﻿using BizApi;
+using GMES.Util;
+using GMES.Web;
+using LGChem.Common;
+using System;
+using System.Collections.Generic;
+using System.Data;
+using System.Linq;
+using System.Web;
+using System.Web.Script.Services;
+using System.Web.Services;
+using System.Web.UI;
+using System.Web.UI.WebControls;
+
+/* 
+*************************************************************************************************
+* @source  : GMES_POM/GMES_IMES_0239.aspx.cs
+* @desc    : 공정관리 - 정보조회 - 소성점검일지
+************************************************************************************************* 
+* VER  DATE         AUTHOR      		DESCRIPTION
+*************************************************************************************************
+* 1.0  2019/09/16   문창완              INIT
+* 1.1  2021/11/26   황유라              C20211001-000324 GMES 내 작업자, 생산비고 열 추가 요청
+*************************************************************************************************
+*/
+
+public partial class GMES_POM_GMES_IMES_0239 : GMESPage
+{
+    #region Event
+    protected void Page_Load(object sender, EventArgs e)
+    {
+        if (!IsPostBack)
+        {
+            ParsingRequest();
+        }
+    }
+    #endregion
+
+    #region General Method
+    private void ParsingRequest()
+    {
+        //권한설정
+        if (Request["ACCESS_FLAG"] != null)
+        {
+            ViewState["ACCESS_FLAG"] = Request["ACCESS_FLAG"].ToString();
+        }
+
+        ViewState["MENU_ID"] = null;
+        if (Request["MENU_ID"] != null)
+        {
+            ViewState["MENU_ID"] = Request["MENU_ID"].ToString();
+        }
+
+        this.hidUserID.Value = SSUser.UserID;
+        this.hidLangID.Value = SSUser.LangID;
+        this.hidShopID.Value = SSUser.ShopID;
+    }
+
+    #endregion
+
+    #region Web Method
+    [WebMethod(EnableSession = true), ScriptMethod(ResponseFormat = ResponseFormat.Json)]
+    public static ApiResponse GetData(string bizID, object[] items, string inTableNames, string outTableNames)
+    {
+        
+        return FillBizActor_ReturnByApiResponse(bizID, items);
+    }
+
+    [WebMethod(EnableSession = true), ScriptMethod(ResponseFormat = ResponseFormat.Json)]
+    public static ApiResponse ExecuteData(string bizID, object[] items, string inTableNames, string outTableNames)
+    {
+        return ExecuteBizActor_ReturnByApiResponse(bizID, items, inTableNames, outTableNames);
+    }
+
+    [WebMethod(EnableSession = true), ScriptMethod(ResponseFormat = ResponseFormat.Json)]
+    public static ApiResponse GetDataList(string bizID, object[] items, string inTableNames, string outTableNames, string eqptBizId)
+    {
+        ApiResponse res = new ApiResponse();
+        try
+        {
+            DataSet dsEqpt = FillBizActor(eqptBizId, items);
+
+            DataTable dtEqpt = dsEqpt.Tables["RSLTDT"];
+
+            string eqptName = String.Empty;
+
+            foreach(DataRow dr in dtEqpt.Rows)
+            {
+                eqptName = dr["EQPTNAME_S"].ToString();
+            }
+
+            DataSet ds = FillBizActor(bizID, items, inTableNames, outTableNames);
+
+            // 왼쪽 항목
+            DataTable dtColumnList = ds.Tables["OUTDATA_COL"].Rows.Count > 0 ? ds.Tables["OUTDATA_COL"].Select().CopyToDataTable() : new DataTable();
+            // LMS 결과
+            DataTable dtOutData = ds.Tables["OUTDATA_INFO"].Rows.Count > 0 ? ds.Tables["OUTDATA_INFO"].Select().CopyToDataTable() : new DataTable();
+            // 작업자, 생산비고
+            DataTable dtEquipmentNote = ds.Tables["OUTDATA_NOTE"].Rows.Count > 0 ? ds.Tables["OUTDATA_NOTE"].Select().CopyToDataTable() : new DataTable();
+
+            ds.Tables["OUTDATA_INFO"].Columns.Add("EQPTNAME", typeof(string));
+            {
+                DataTable dtResult = ds.Tables["OUTDATA_INFO"].Rows.Count > 0 ? (
+                ds.Tables["OUTDATA_INFO"].AsEnumerable()
+                        .GroupBy(r => new {
+                            INSERT_DATE = r["INSERT_DATE"],
+                            EQPTID = r["EQPTID"],
+                            INSPE_ITEM = r["INSPE_ITEM"],
+                            INSPE_SUB_ITEM = r["INSPE_SUB_ITEM"],
+                            P1_ROW = r["P1_ROW"]
+
+                        })
+                        .Select(g => {
+                            var row = ds.Tables["OUTDATA_INFO"].NewRow();
+
+                            row["INSERT_DATE"] = g.Key.INSERT_DATE;
+                            row["EQPTID"] = g.Key.EQPTID;
+                            row["EQPTNAME"] = eqptName;
+                            row["INSPE_ITEM"] = g.Key.INSPE_ITEM;
+                            row["INSPE_SUB_ITEM"] = g.Key.INSPE_SUB_ITEM;
+                            row["P1_ROW"] = g.Key.P1_ROW;
+
+                            return row;
+                        }).CopyToDataTable()
+                ) : new DataTable();
+
+                // 2021.11.26 황유라 작업자, 생산비고 열 추가 C20211001-000324 GMES 내 작업자, 생산비고 열 추가 요청
+                string[] noteCols = new string[] { "USERID", "USERNAME", "WORKER_NOTE" };
+                foreach (string colName in noteCols)
+                {
+                    dtResult.Columns.Add(colName, typeof(string));
+                }
+
+                // 로우로 된 ZONE 코드를 컬럼으로 추가
+                foreach (DataRow dr in dtColumnList.Rows)
+                {
+                    string colName = "COL_" + dr["P1_COL"].ToString();
+                    dtResult.Columns.Add(colName, typeof(string));
+                    dtResult.Columns.Add(colName + "_COLOR", typeof(string));
+                }
+
+                if (dtResult.Rows.Count > 0)
+                {
+                    //2021.11.26 황유라 작업자, 생산비고 데이타 적용 C20211001-000324 GMES 내 작업자, 생산비고 열 추가 요청 시작
+                    foreach (DataRow dr in dtResult.Rows)
+                    {
+                        var note = from eqptNote in dtEquipmentNote.AsEnumerable()
+                                   where eqptNote.Field<string>("EQPTID") == dr["EQPTID"].ToString()
+                                      && eqptNote.Field<string>("CALDATE") == dr["INSERT_DATE"].ToString()
+                                   select new
+                                   {
+                                       USERID = eqptNote.Field<string>("USERID"),
+                                       USERNAME = eqptNote.Field<string>("USERNAME"),
+                                       WORKER_NOTE = eqptNote.Field<string>("WORKER_NOTE")
+                                   };
+
+                        IEnumerable<DataRow> iDataRows = dtResult.Rows.Cast<DataRow>().Where(r =>
+                                                     r["EQPTID"] == dr["EQPTID"].ToString()
+                                                 &&  r["INSERT_DATE"] == dr["INSERT_DATE"].ToString()
+                        );
+
+                        foreach (var obj in note.ToList())
+                        {
+                            try
+                            {
+                                iDataRows.ToList().ForEach(r => r.SetField("USERID", obj.USERID));
+                                iDataRows.ToList().ForEach(r => r.SetField("USERNAME", obj.USERNAME));
+                                iDataRows.ToList().ForEach(r => r.SetField("WORKER_NOTE", obj.WORKER_NOTE));
+                            }
+                            catch (Exception exx)
+                            {
+                                //
+                            }
+                        }
+                    }
+                    //2021.11.26 황유라 작업자, 생산비고 데이타 적용 C20211001-000324 GMES 내 작업자, 생산비고 열 추가 요청 종료
+
+                    // 각 KEY에 해당하는 ZONE 코드( INSPE_CD )의 측정 값( INSP_VAL ) 목록을 갖어온다.
+                    foreach (DataRow dr in dtResult.Rows)
+                    {
+                        var lms_output = from lms in dtOutData.AsEnumerable()
+                                            where lms.Field<string>("INSERT_DATE") == dr["INSERT_DATE"].ToString()
+                                              && lms.Field<string>("EQPTID") == dr["EQPTID"].ToString()
+                                              && lms.Field<string>("INSPE_ITEM") == dr["INSPE_ITEM"].ToString()
+                                              && lms.Field<string>("INSPE_SUB_ITEM") == dr["INSPE_SUB_ITEM"].ToString()
+                                              && lms.Field<string>("P1_ROW") == dr["P1_ROW"].ToString()
+                                            select new
+                                            {
+                                                P1_COL = lms.Field<string>("P1_COL"),
+                                                INSPE_CD = lms.Field<string>("INSPE_CD"),
+                                                INSP_VAL = lms.Field<string>("INSP_VAL"),
+                                                OVER_COLOR = lms.Field<string>("OVER_COLOR"),
+                                            };
+
+                        // 각 KEY 에 해당하는 ZONE 코드의 수량을 dtDefectResult 테이블의 해당 KEY의 해당 컬럼에 업뎃한다.
+                        IEnumerable<DataRow> iDataRows = dtResult.Rows.Cast<DataRow>().Where(r =>
+                               r["INSERT_DATE"].ToString() == dr["INSERT_DATE"].ToString()
+                            && r["EQPTID"].ToString() == dr["EQPTID"].ToString()
+                            && r["INSPE_ITEM"].ToString() == dr["INSPE_ITEM"].ToString()
+                            && r["INSPE_SUB_ITEM"].ToString() == dr["INSPE_SUB_ITEM"].ToString()
+                            && r["P1_ROW"].ToString() == dr["P1_ROW"].ToString()
+                            );                                                
+
+                        foreach (var obj in lms_output.ToList())
+                        { 
+                            if (string.IsNullOrEmpty(obj.INSPE_CD)) continue;
+
+                            string p1_col = "COL_" + obj.P1_COL;
+                            string code = obj.INSPE_CD;
+                            string value = obj.INSP_VAL;
+                            string color_col = p1_col + "_COLOR";
+                            string over_color = obj.OVER_COLOR;
+
+                            try
+                            {
+                                iDataRows.ToList().ForEach(r => r.SetField(p1_col, value));
+                                iDataRows.ToList().ForEach(r => r.SetField(color_col, over_color));
+                            }
+                            catch (Exception exx)
+                            {
+                                //
+                            }
+                        }
+                    }
+                }
+
+                dtColumnList.TableName = "OUTDATA_COLUMN";
+                dtResult.TableName = "OUTDATA_RESULT";
+
+                ds.Tables.Add(dtColumnList);
+                ds.Tables.Add(dtResult);
+            }
+
+            res.data = UtilCommon.dataTableToRowList(ds);
+        }
+        catch (Exception ex)
+        {
+            res.message = GetMessage(ex); //ex.Message.ToString(); 
+            res.status = "FAIL";
+        }
+        //return FillBizActor_ReturnByApiResponse(bizID, items);
+        return res;
+    }
+    #endregion
+
+    #region 2021.11.26 이전
+    public static ApiResponse GetDataList_20211126(string bizID, object[] items, string inTableNames, string outTableNames, string eqptBizId)
+    {
+        ApiResponse res = new ApiResponse();
+        try
+        {
+            DataSet dsEqpt = FillBizActor(eqptBizId, items);
+
+            DataTable dtEqpt = dsEqpt.Tables["RSLTDT"];
+
+            string eqptName = String.Empty;
+
+            foreach (DataRow dr in dtEqpt.Rows)
+            {
+                eqptName = dr["EQPTNAME_S"].ToString();
+            }
+
+            DataSet ds = FillBizActor(bizID, items, inTableNames, outTableNames);
+            DataTable dtDefectValues = ds.Tables["OUTDATA_INFO"].Rows.Count > 0 ? ds.Tables["OUTDATA_INFO"].Select().CopyToDataTable() : new DataTable();
+
+            ds.Tables["OUTDATA_INFO"].Columns.Add("EQPTNAME", typeof(string));
+            {
+                DataTable dtDefectKey = ds.Tables["OUTDATA_INFO"].Rows.Count > 0 ? (
+                ds.Tables["OUTDATA_INFO"].AsEnumerable()
+                        .GroupBy(r => new {
+                            INSERT_DATE = r["INSERT_DATE"],
+                            EQPTID = r["EQPTID"],
+                            INSPE_ITEM = r["INSPE_ITEM"],
+                            INSPE_SUB_ITEM = r["INSPE_SUB_ITEM"],
+                            P1_ROW = r["P1_ROW"]
+
+                        })
+                        .Select(g => {
+                            var row = ds.Tables["OUTDATA_INFO"].NewRow();
+
+                            row["INSERT_DATE"] = g.Key.INSERT_DATE;
+                            row["EQPTID"] = g.Key.EQPTID;
+                            row["EQPTNAME"] = eqptName;
+                            row["INSPE_ITEM"] = g.Key.INSPE_ITEM;
+                            row["INSPE_SUB_ITEM"] = g.Key.INSPE_SUB_ITEM;
+                            row["P1_ROW"] = g.Key.P1_ROW;
+
+                            return row;
+                        }).CopyToDataTable()
+                ) : new DataTable();
+                //DataTable dtReasonList = ds.Tables["OUTDATA_DEFECT"].Rows.Count > 0 ? ds.Tables["OUTDATA_DEFECT"].Select("SELECT RESNCODE GROUP BY RESNCODE").CopyToDataTable() : new DataTable();
+                DataTable dtReasonList = ds.Tables["OUTDATA_INFO"].Rows.Count > 0 ? (
+                    ds.Tables["OUTDATA_INFO"].AsEnumerable()
+                            .GroupBy(r => new {
+                                INSPE_CD = r["INSPE_CD"]
+                            })
+                            .Select(g => {
+                                var row = ds.Tables["OUTDATA_INFO"].NewRow();
+
+                                row["INSPE_CD"] = g.Key.INSPE_CD;
+
+                                return row;
+                            }).CopyToDataTable()
+                    ) : new DataTable();
+                DataTable dtReasonCodes = ds.Tables["OUTDATA_COL"].Rows.Count > 0 ? ds.Tables["OUTDATA_COL"].Select().CopyToDataTable() : new DataTable();
+
+                DataTable dtReasonCodeList = null;
+
+                {
+                    dtReasonCodeList = dtReasonCodes.Copy();
+                }
+
+                dtReasonCodeList.TableName = "OUTDATA_COLUMN";
+
+                // 로우로 된 ZONE 코드를 컬럼으로 추가
+                foreach (DataRow dr in dtReasonCodeList.Rows)
+                {
+                    //dtDefectKey.Columns.Add(dr["INSPE_CD"].ToString(), typeof(string));
+                    //dtDefectKey.Columns.Add(dr["INSPE_CD"].ToString() + "_COLOR", typeof(string));
+                    string colName = "COL_" + dr["P1_COL"].ToString();
+                    dtDefectKey.Columns.Add(colName, typeof(string));
+                    dtDefectKey.Columns.Add(colName + "_COLOR", typeof(string));
+                }
+
+                DataTable dtDefectResult = dtDefectKey.Copy();
+                dtDefectResult.TableName = "OUTDATA_RESULT";
+
+                if (dtDefectKey.Rows.Count > 0)
+                {
+                    // 각 KEY에 해당하는 ZONE 코드( INSPE_CD )의 측정 값( INSP_VAL ) 목록을 갖어온다.
+                    foreach (DataRow dr in dtDefectKey.Rows)
+                    {
+                        var resnCodeValue = from resnCode in dtDefectValues.AsEnumerable()
+                                            where resnCode.Field<string>("INSERT_DATE") == dr["INSERT_DATE"].ToString()
+                                              && resnCode.Field<string>("EQPTID") == dr["EQPTID"].ToString()
+                                              && resnCode.Field<string>("INSPE_ITEM") == dr["INSPE_ITEM"].ToString()
+                                              && resnCode.Field<string>("INSPE_SUB_ITEM") == dr["INSPE_SUB_ITEM"].ToString()
+                                              && resnCode.Field<string>("P1_ROW") == dr["P1_ROW"].ToString()
+                                            select new
+                                            {
+                                                P1_COL = resnCode.Field<string>("P1_COL"),
+                                                INSPE_CD = resnCode.Field<string>("INSPE_CD"),
+                                                INSP_VAL = resnCode.Field<string>("INSP_VAL"),
+                                                OVER_COLOR = resnCode.Field<string>("OVER_COLOR"),
+                                            };
+
+                        // 각 KEY 에 해당하는 ZONE 코드의 수량을 dtDefectResult 테이블의 해당 KEY의 해당 컬럼에 업뎃한다.
+                        IEnumerable<DataRow> iDataRows = dtDefectResult.Rows.Cast<DataRow>().Where(r =>
+                               r["INSERT_DATE"].ToString() == dr["INSERT_DATE"].ToString()
+                            && r["EQPTID"].ToString() == dr["EQPTID"].ToString()
+                            && r["INSPE_ITEM"].ToString() == dr["INSPE_ITEM"].ToString()
+                            && r["INSPE_SUB_ITEM"].ToString() == dr["INSPE_SUB_ITEM"].ToString()
+                            && r["P1_ROW"].ToString() == dr["P1_ROW"].ToString()
+                            );
+
+                        foreach (var obj in resnCodeValue.ToList())
+                        {
+                            if (string.IsNullOrEmpty(obj.INSPE_CD)) continue;
+
+                            string p1_col = "COL_" + obj.P1_COL;
+                            string resnCode = obj.INSPE_CD;
+                            string resnQty = obj.INSP_VAL;
+                            string color_col = p1_col + "_COLOR";
+                            string over_color = obj.OVER_COLOR;
+
+                            try
+                            {
+                                //iDataRows.ToList().ForEach(r => r.SetField(resnCode, resnQty));
+                                iDataRows.ToList().ForEach(r => r.SetField(p1_col, resnQty));
+                                iDataRows.ToList().ForEach(r => r.SetField(color_col, over_color));
+                            }
+                            catch (Exception exx)
+                            {
+                                //
+                            }
+                        }
+                    }
+                }
+
+                ds.Tables.Add(dtReasonCodeList);
+                ds.Tables.Add(dtDefectResult);
+            }
+
+            res.data = UtilCommon.dataTableToRowList(ds);
+        }
+        catch (Exception ex)
+        {
+            res.message = GetMessage(ex); //ex.Message.ToString(); 
+            res.status = "FAIL";
+        }
+        //return FillBizActor_ReturnByApiResponse(bizID, items);
+        return res;
+    }
+    #endregion
+
+
+
+}

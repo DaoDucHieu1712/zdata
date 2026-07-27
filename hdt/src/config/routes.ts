@@ -1,0 +1,15 @@
+export const ROUTES = {
+  HOME:         '/',
+  ORDERS:       '/orders',
+  ORDER_DETAIL: (id: string) => `/orders/${id}`,
+  BLOG:         '/blog',
+  BLOG_DETAIL:  (id: string) => `/blog/${id}`,
+  VOCAB:             '/vocab',
+  VOCAB_CREATE:      '/vocab/create',
+  VOCAB_DETAIL:      (id: string) => `/vocab/${id}`,
+  VOCAB_EDIT:        (id: string) => `/vocab/${id}/edit`,
+  NOTES:        '/notes',
+  NOTE:         (id: string) => `/notes/${id}`,
+  WORKFLOW:     '/workflow',
+  STORYBOARD:   '/storyboard',
+} as const

@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(Get-ChildItem *)",
+      "PowerShell(Get-ChildItem \"C:\\\\Users\\\\63200784\\\\Desktop\\\\hiudwc\\\\workout-ai\" | Where-Object { $_.Name -ne \".claude\" } | Select-Object Name, Length)"
+    ]
+  }
+}

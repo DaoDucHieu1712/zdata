@@ -1,0 +1,1489 @@
+﻿<%--/* 
+*************************************************************************************************
+* @source  : GMES_IM_POM/GMES_IMES_0240_1.aspx
+* @desc    : 공정관리-측정관리-측정 정보 관리(엑셀업로드 팝업)
+************************************************************************************************* 
+* VER  DATE         AUTHOR      		DESCRIPTION
+*************************************************************************************************
+* 1.0  2019/08/22   김원욱              INIT
+* 1.1  2021/09/07   강민규              측정항목 추가소분량 추가, 메뉴마감 추가
+* 1.2  2021/12/09   강민규              엑셀 업로드 이후 마감 체크가 끝날 때 까지 loading 화면 설정
+* 1.3  2021/12/14   황유라              엑셀 업로드 이후 CLOSELOADING 적용
+* 1.4  2021/12/20   강민규              엑셀 업로드 시 공장,라인,구분값이 없을 시 오류 로직 추가
+* 1.5  2021/12/22   강민규              DA_IM_PRD_SEL_WIPCLOSE input SHOPID추가
+* 1.6  2021/01/10   강민규              업로드가 1개일때 loading화면이 끝나지 않는 현상 수정
+* 1.7  2022/02/23   강민규              C20220110-000700 측정항목 Metal용액 투입량 추가 및 마감체크 BIZ를 한번에 말아서 BIZ에 INPUT하고 OUTDATA로 받을 수 있게 수정
+* 1.8  2022/03/02   강민규              엑셀 업로드 시 Loading이 종료되지 않는 현상 수정
+* 1.9  2022/07/06   강민규              C20220623-000071 측정항목 Capa 추가
+* 2.0  2022/08/01   강민규              C20220726-000547 Metal용액 투입량의 계획량 컬럼 추가
+* 2.1  2023/10/20   정다운              측정항목 ( EE2, OA2 ) 제외
+*************************************************************************************************
+*/--%>
+
+
+<%@ Page Language="C#" MasterPageFile="~/Master/MasterApiPopup.Master" AutoEventWireup="true" CodeFile="GMES_IMES_0240_1.aspx.cs" Inherits="GMES_IMES_0240_1" %>
+
+<%-- Fucntion --%>
+<asp:Content ID="HeaderContent" ContentPlaceHolderID="headHolder" runat="server">
+    <script type="text/javascript" src="/GMES_COM/Scripts/IMSCommon.js"></script>
+    <script type="text/javascript" src="/common/Js/xlsx.core.min.js"></script>
+    <script type="text/javascript" src="/common/js/JsCommon.js"></script>
+    <script language="javascript" type="text/javascript">
+        var msgSaveSuccess = "<%=lang.message["10004"]%>";
+        var MeasureID = '';
+
+        //==============================================================
+        //== Member Variable ===========================================
+
+        //==============================================================
+        //== Event =====================================================
+        $(window).resize(function () {
+            AutoHeightSpread();
+        });
+
+        $(document).ready(function () {
+            $("#uploadFile").change(ExcelImport);
+            SetMeasureItem();
+
+            //SetWarehouseType();
+            ChangeItemGrid("init");
+            //initGrid();
+            //$('#cbo_CstStat').combobox("setValue", $('[id$=hidCstStat]').val());
+            SetButtonEnable("#btnSave", false);
+        });
+
+        function onSlideResize() {
+            AutoHeightSpread();
+        };
+
+        function formatter2(date) {
+            if (!date) { return ''; }
+            var y = date.getFullYear();
+            var m = date.getMonth() + 1;
+            return y + '-' + (m < 10 ? ('0' + m) : m);
+        }
+        function parser2(s) {
+            if (!s) { return null; }
+            var ss = s.split('-');
+            var y = parseInt(ss[0], 10);
+            var m = parseInt(ss[1], 10);
+            if (!isNaN(y) && !isNaN(m)) {
+                return new Date(y, m - 1, 1);
+            } else {
+                return new Date();
+            }
+        }
+
+        function ChangeItemGrid(code) {
+            var items = $('#cboMeasureItem').combobox('getValue');
+            if (code != "init" && items == "") {
+                return;
+            }
+            UCRealgrid.ColumnsClear();
+            if (code == "init" || code == "EE") // 전력량
+            {
+                UCRealgrid.AddColumn("USEDATE", "<%=lang.word["Date"]%>", 100, "yyyy-MM-dd", ColumnType.TEXT, false, true, null, null); //일
+                UCRealgrid.AddColumn("AREAID", "<%=lang.word["AREANAME"]%> ID", 80, "center", ColumnType.TEXT, false, true, null, null); // 공장동 ID
+                UCRealgrid.AddColumn("AREANAME", "<%=lang.word["AREANAME"]%>", 120, "center", 4, false, true, null, null); // 공장동
+                UCRealgrid.AddColumn("EQSGID", "<%=lang.word["Line/Equipment Seg."]%> ID", 110, "center", 4, false, true, null, null); // 라인/실 ID
+                UCRealgrid.AddColumn("EQSGNAME", "<%=lang.word["Line/Equipment Seg."]%>", 120, "center", ColumnType.TEXT, false, true, null, null); // 라인/실
+                UCRealgrid.AddColumn("UTILID", "<%=lang.word["UTILID"]%>", 100, "center", ColumnType.TEXT, false, false, null, null);
+                UCRealgrid.AddColumn("UTILNAME", "<%=lang.word["Measure Item"]%>", 150, "center", ColumnType.TEXT, false, false, null, null);
+                UCRealgrid.AddColumn("SEPARATION_TYPE", "<%=lang.word["Classification CODE"]%>", 100, "center", ColumnType.TEXT, false, true, null, null); // 구분 코드
+                UCRealgrid.AddColumn("SEPARATION_TYPE_NAME", "<%=lang.word["Classification"]%>", 400, "center", 4, false, true, null, null); // 구분 코드명
+                UCRealgrid.AddColumn("PRODID", "<%=lang.word["PRODID"]%>", 100, "center", ColumnType.TEXT, false, true, null, null); // 제품코드
+                //UCRealgrid.AddColumn("PRODNAME", "<%=lang.word["PRODNAME"]%>", 200, "center", ColumnType.TEXT, false, true, null, null); // 제품명         
+
+                UCRealgrid.AddColumn("ATTR1", "<%=lang.word["UNIT"]%>", 100, "center", ColumnType.TEXT, false, false, null, null); // 단위
+
+                UCRealgrid.AddColumn("MODIFIED_VALUE", "<%=lang.word["USED AMOUNT"]%>", 100, "#,##0", 1, false, true, null, null); // 사용량
+                UCRealgrid.AddColumn("COST", "<%=lang.word["Unit Price"]%>", 80, "#,##0", 1, false, true, null, null); // 단가
+                UCRealgrid.AddColumn("MODIFY_YN", "<%=lang.word["MODIFY_YN"]%>", 100, "center", 4, false, false, null, null); // MODIFY_YN
+                UCRealgrid.AddColumn("MTRLID_YN", "<%=lang.word["MTRLID_YN"]%>", 100, "center", 4, false, false, null, null); // MTRLID_YN
+            }
+            if (code == "init" || code == "OA") // 산소량인경우 
+            {
+                UCRealgrid.AddColumn("USEDATE", "<%=lang.word["Date"]%>", 100, "yyyy-MM-dd", ColumnType.TEXT, false, true, null, null); //일
+                UCRealgrid.AddColumn("AREAID", "<%=lang.word["AREANAME"]%> ID", 80, "center", ColumnType.TEXT, false, true, null, null); // 공장동 ID
+                UCRealgrid.AddColumn("AREANAME", "<%=lang.word["AREANAME"]%>", 120, "center", 4, false, true, null, null); // 공장동
+                UCRealgrid.AddColumn("EQSGID", "<%=lang.word["Line/Equipment Seg."]%> ID", 110, "center", 4, false, true, null, null); // 라인/실 ID
+                UCRealgrid.AddColumn("EQSGNAME", "<%=lang.word["Line/Equipment Seg."]%>", 120, "center", ColumnType.TEXT, false, true, null, null); // 라인/실
+                UCRealgrid.AddColumn("UTILID", "<%=lang.word["UTILID"]%>", 100, "center", ColumnType.TEXT, false, false, null, null);
+                UCRealgrid.AddColumn("UTILNAME", "<%=lang.word["Measure Item"]%>", 150, "center", ColumnType.TEXT, false, false, null, null);
+                UCRealgrid.AddColumn("SEPARATION_TYPE", "<%=lang.word["Classification CODE"]%>", 100, "center", ColumnType.TEXT, false, true, null, null); // 구분 코드
+                UCRealgrid.AddColumn("SEPARATION_TYPE_NAME", "<%=lang.word["Classification"]%>", 400, "center", 4, false, true, null, null); // 구분 코드명
+                UCRealgrid.AddColumn("PRODID", "<%=lang.word["PRODID"]%>", 100, "center", ColumnType.TEXT, false, true, null, null); // 제품코드
+                //UCRealgrid.AddColumn("PRODNAME", "<%=lang.word["PRODNAME"]%>", 200, "center", ColumnType.TEXT, false, true, null, null); // 제품명         
+
+                UCRealgrid.AddColumn("ATTR1", "<%=lang.word["UNIT"]%>", 100, "center", ColumnType.TEXT, false, true, null, null); // 단위
+
+                UCRealgrid.AddColumn("MODIFIED_VALUE", "<%=lang.word["USED AMOUNT"]%>", 100, "#,##0", 1, false, true, null, null); // 사용량
+                UCRealgrid.AddColumn("COST", "<%=lang.word["Unit Price"]%>", 80, "#,##0", 1, false, true, null, null); // 단가
+                UCRealgrid.AddColumn("MODIFY_YN", "<%=lang.word["MODIFY_YN"]%>", 100, "center", 4, false, false, null, null); // MODIFY_YN
+                UCRealgrid.AddColumn("MTRLID_YN", "<%=lang.word["MTRLID_YN"]%>", 100, "center", 4, false, false, null, null); // MTRLID_YN
+            }
+            if (code == "PC") //소성용기사용
+            {
+                UCRealgrid.AddColumn("USEDATE", "<%=lang.word["Date"]%>", 100, "yyyy-MM-dd", ColumnType.TEXT, false, true, null, null); //일
+                UCRealgrid.AddColumn("AREAID", "<%=lang.word["AREANAME"]%> ID", 80, "center", ColumnType.TEXT, false, true, null, null); // 공장동 ID
+                UCRealgrid.AddColumn("AREANAME", "<%=lang.word["AREANAME"]%>", 120, "center", 4, false, true, null, null); // 공장동
+                UCRealgrid.AddColumn("EQSGID", "<%=lang.word["Line/Equipment Seg."]%> ID", 110, "center", 4, false, true, null, null); // 라인/실 ID
+                UCRealgrid.AddColumn("EQSGNAME", "<%=lang.word["Line/Equipment Seg."]%>", 120, "center", ColumnType.TEXT, false, true, null, null); // 라인/실
+                UCRealgrid.AddColumn("UTILID", "<%=lang.word["UTILID"]%>", 100, "center", ColumnType.TEXT, false, false, null, null);
+                UCRealgrid.AddColumn("UTILNAME", "<%=lang.word["Measure Item"]%>", 150, "center", ColumnType.TEXT, false, false, null, null);
+                UCRealgrid.AddColumn("SEPARATION_TYPE", "<%=lang.word["ERP/MDM CODE"]%>", 100, "center", ColumnType.TEXT, false, true, null, null); // 구분 코드
+                UCRealgrid.AddColumn("SEPARATION_TYPE_NAME", "<%=lang.word["HALL/MIN Classfication"]%>", 400, "center", 4, false, true, null, null); // 구분 코드명
+                UCRealgrid.AddColumn("PRODID", "<%=lang.word["PRODID"]%>", 100, "center", ColumnType.TEXT, false, true, null, null); // 제품코드
+                UCRealgrid.AddColumn("MODIFIED_VALUE", "<%=lang.word["USED AMOUNT"]%>", 80, "#,##0", 1, false, true, null, null); // 사용량
+                UCRealgrid.AddColumn("MODIFY_YN", "<%=lang.word["MODIFY_YN"]%>", 100, "center", 4, false, false, null, null); // MODIFY_YN
+                UCRealgrid.AddColumn("MTRLID_YN", "<%=lang.word["MTRLID_YN"]%>", 100, "center", 4, false, false, null, null); // MTRLID_YN
+            }
+            if (code == "PQ") // 생산량
+            {
+
+                UCRealgrid.AddColumn("USEDATE", "<%=lang.word["Date"]%>", 100, "yyyy-MM-dd", ColumnType.TEXT, false, true, null, null); //일
+                UCRealgrid.AddColumn("AREAID", "<%=lang.word["AREANAME"]%> ID", 80, "center", ColumnType.TEXT, false, true, null, null); // 공장동 ID
+                UCRealgrid.AddColumn("AREANAME", "<%=lang.word["AREANAME"]%>", 120, "center", 4, false, true, null, null); // 공장동
+                UCRealgrid.AddColumn("EQSGID", "<%=lang.word["Line/Equipment Seg."]%> ID", 110, "center", 4, false, true, null, null); // 라인/실 ID
+                UCRealgrid.AddColumn("EQSGNAME", "<%=lang.word["Line/Equipment Seg."]%>", 120, "center", ColumnType.TEXT, false, true, null, null); // 라인/실
+                UCRealgrid.AddColumn("UTILID", "<%=lang.word["UTILID"]%>", 100, "center", ColumnType.TEXT, false, false, null, null);
+                UCRealgrid.AddColumn("UTILNAME", "<%=lang.word["Measure Item"]%>", 150, "center", ColumnType.TEXT, false, false, null, null);
+                UCRealgrid.AddColumn("SEPARATION_TYPE", "<%=lang.word["Classification CODE"]%>", 100, "center", ColumnType.TEXT, false, true, null, null); // 구분 코드
+                UCRealgrid.AddColumn("SEPARATION_TYPE_NAME", "<%=lang.word["Classification"]%>", 400, "center", 4, false, true, null, null); // 구분 코드명
+                UCRealgrid.AddColumn("PRODID", "<%=lang.word["PRODID"]%>", 100, "center", ColumnType.TEXT, false, true, null, null); // 제품코드
+                UCRealgrid.AddColumn("MODIFIED_VALUE", "<%=lang.word["PROD_QTY"]%>", 100, "#,##0", 1, false, true, null, null); // 생산량
+                UCRealgrid.AddColumn("MODIFY_YN", "<%=lang.word["MODIFY_YN"]%>", 100, "center", 4, false, false, null, null); // MODIFY_YN
+                UCRealgrid.AddColumn("MTRLID_YN", "<%=lang.word["MTRLID_YN"]%>", 100, "center", 4, false, false, null, null); // MTRLID_YN
+            }
+            if (code == "SD") // 생산량
+            {
+
+                UCRealgrid.AddColumn("USEDATE", "<%=lang.word["Date"]%>", 100, "yyyy-MM-dd", ColumnType.TEXT, false, true, null, null); //일
+                UCRealgrid.AddColumn("AREAID", "<%=lang.word["AREANAME"]%> ID", 80, "center", ColumnType.TEXT, false, true, null, null); // 공장동 ID
+                UCRealgrid.AddColumn("AREANAME", "<%=lang.word["AREANAME"]%>", 120, "center", 4, false, true, null, null); // 공장동
+                UCRealgrid.AddColumn("EQSGID", "<%=lang.word["Line/Equipment Seg."]%> ID", 110, "center", 4, false, true, null, null); // 라인/실 ID
+                UCRealgrid.AddColumn("EQSGNAME", "<%=lang.word["Line/Equipment Seg."]%>", 120, "center", ColumnType.TEXT, false, true, null, null); // 라인/실
+                UCRealgrid.AddColumn("UTILID", "<%=lang.word["UTILID"]%>", 100, "center", ColumnType.TEXT, false, false, null, null);
+                UCRealgrid.AddColumn("UTILNAME", "<%=lang.word["Measure Item"]%>", 150, "center", ColumnType.TEXT, false, false, null, null);
+                UCRealgrid.AddColumn("SEPARATION_TYPE", "<%=lang.word["Classification CODE"]%>", 100, "center", ColumnType.TEXT, false, true, null, null); // 구분 코드
+                UCRealgrid.AddColumn("SEPARATION_TYPE_NAME", "<%=lang.word["Classification"]%>", 400, "center", 4, false, true, null, null); // 구분 코드명
+                UCRealgrid.AddColumn("PRODID", "<%=lang.word["PRODID"]%>", 100, "center", ColumnType.TEXT, false, true, null, null); // 제품코드
+                UCRealgrid.AddColumn("MODIFIED_VALUE", "<%=lang.word["Quantity of Subdivision"]%>", 100, "#,##0", 1, false, true, null, null); // 소분량
+                UCRealgrid.AddColumn("MODIFY_YN", "<%=lang.word["MODIFY_YN"]%>", 100, "center", 4, false, false, null, null); // MODIFY_YN
+                UCRealgrid.AddColumn("MTRLID_YN", "<%=lang.word["MTRLID_YN"]%>", 100, "center", 4, false, false, null, null); // MTRLID_YN
+            }
+            if (code == "MS") // Metal 용액 투입량
+            {
+
+                UCRealgrid.AddColumn("USEDATE", "<%=lang.word["Date"]%>", 100, "yyyy-MM-dd", ColumnType.TEXT, false, true, null, null); //일
+                UCRealgrid.AddColumn("AREAID", "<%=lang.word["AREANAME"]%> ID", 80, "center", ColumnType.TEXT, false, true, null, null); // 공장동 ID
+                UCRealgrid.AddColumn("AREANAME", "<%=lang.word["AREANAME"]%>", 120, "center", 4, false, true, null, null); // 공장동
+                UCRealgrid.AddColumn("EQSGID", "<%=lang.word["Line/Equipment Seg."]%> ID", 110, "center", 4, false, true, null, null); // 라인/실 ID
+                UCRealgrid.AddColumn("EQSGNAME", "<%=lang.word["Line/Equipment Seg."]%>", 120, "center", ColumnType.TEXT, false, true, null, null); // 라인/실
+                UCRealgrid.AddColumn("UTILID", "<%=lang.word["UTILID"]%>", 100, "center", ColumnType.TEXT, false, false, null, null);
+                UCRealgrid.AddColumn("UTILNAME", "<%=lang.word["Measure Item"]%>", 150, "center", ColumnType.TEXT, false, false, null, null);
+                UCRealgrid.AddColumn("SEPARATION_TYPE", "<%=lang.word["PRODID"]%>", 300, "center", ColumnType.TEXT, false, false, null, null); // 제품코드
+                UCRealgrid.AddColumn("SEPARATION_TYPE_NAME", "<%=lang.word["PRODNAME"]%>", 400, "center", 4, false, false, null, null); // 제품명
+                UCRealgrid.AddColumn("PRODID", "<%=lang.word["PRODID"]%>", 100, "center", ColumnType.TEXT, false, true, null, null); // 제품코드
+                UCRealgrid.AddColumn("ATTR1", "<%=lang.word["Plan Qty"]%>", 100, "#,###.##0", 1, false, true, null, null); // C20220726-000547 2022.08.01 강민규 계획량 컬럼 추가(계획량)
+                UCRealgrid.AddColumn("MODIFIED_VALUE", "<%=lang.word["Input Quantity"]%>", 100, "#,##0", 1, false, true, null, null); // 투입량
+                UCRealgrid.AddColumn("MODIFY_YN", "<%=lang.word["MODIFY_YN"]%>", 100, "center", 4, false, false, null, null); // MODIFY_YN
+                UCRealgrid.AddColumn("MTRLID_YN", "<%=lang.word["MTRLID_YN"]%>", 100, "center", 4, false, false, null, null); // MTRLID_YN
+            }
+            if (code == "CA") // Metal 용액 투입량
+            {
+
+                UCRealgrid.AddColumn("USEDATE", "<%=lang.word["Date"]%>", 100, "yyyy-MM-dd", ColumnType.TEXT, false, true, null, null); //일
+                UCRealgrid.AddColumn("AREAID", "<%=lang.word["AREANAME"]%> ID", 80, "center", ColumnType.TEXT, false, true, null, null); // 공장동 ID
+                UCRealgrid.AddColumn("AREANAME", "<%=lang.word["AREANAME"]%>", 120, "center", 4, false, true, null, null); // 공장동
+                UCRealgrid.AddColumn("EQSGID", "<%=lang.word["Line/Equipment Seg."]%> ID", 110, "center", 4, false, true, null, null); // 라인/실 ID
+                UCRealgrid.AddColumn("EQSGNAME", "<%=lang.word["Line/Equipment Seg."]%>", 120, "center", ColumnType.TEXT, false, true, null, null); // 라인/실
+                UCRealgrid.AddColumn("UTILID", "<%=lang.word["UTILID"]%>", 100, "center", ColumnType.TEXT, false, false, null, null);
+                UCRealgrid.AddColumn("UTILNAME", "<%=lang.word["Measure Item"]%>", 150, "center", ColumnType.TEXT, false, false, null, null);
+                UCRealgrid.AddColumn("SEPARATION_TYPE", "<%=lang.word["PRODID"]%>", 300, "center", ColumnType.TEXT, false, false, null, null); // 제품코드
+                UCRealgrid.AddColumn("SEPARATION_TYPE_NAME", "<%=lang.word["PRODNAME"]%>", 400, "center", 4, false, false, null, null); // 제품명
+                UCRealgrid.AddColumn("PRODID", "<%=lang.word["PRODID"]%>", 100, "center", ColumnType.TEXT, false, true, null, null); // 제품코드
+                //C20220623-000071 2022.07.05 강민규 Capa 추가
+                UCRealgrid.AddColumn("ATTR1", "<%=lang.word["RHK Quantity"]%>", 100, "#,###.##0", 1, false, true, null, null); // RHK 수
+                UCRealgrid.AddColumn("ATTR2", "<%=lang.word["RHK Length"]%>", 100, "#,###.##0", 1, false, true, null, null); // RHK 길이
+                UCRealgrid.AddColumn("ATTR3", "<%=lang.word["Container Quantity"]%>", 100, "#,###.##0", 1, false, true, null, null); // 용기 수
+                UCRealgrid.AddColumn("ATTR4", "<%=lang.word["Container Width"]%>", 100, "#,###.##0", 1, false, true, null, null); // 용기너비
+                UCRealgrid.AddColumn("ATTR5", "<%=lang.word["Roll Speed"]%>", 100, "#,###.##0", 1, false, true, null, null); // 롤 속도
+
+                UCRealgrid.AddColumn("MODIFIED_VALUE", "<%=lang.word["Quantity of Subdivision"]%>", 100, "#,###.##0", 1, false, true, null, null); // 소분량
+                UCRealgrid.AddColumn("MODIFY_YN", "<%=lang.word["MODIFY_YN"]%>", 100, "center", 4, false, false, null, null); // MODIFY_YN
+                UCRealgrid.AddColumn("MTRLID_YN", "<%=lang.word["MTRLID_YN"]%>", 100, "center", 4, false, false, null, null); // MTRLID_YN
+            }
+
+            if (code == "init") {
+                UCRealgrid.InitGrid("", true, true, true);
+                //UCRealgrid.InitGridControl(true, false, true);
+            } else {
+                UCRealgrid.InitGridControl(true, true, true);
+            }
+        }
+
+        // 상태를 설정한다.
+        function SetMeasureItem() {
+            var param1 = 'MeasureItem';
+            var param2 = "'CA', 'EE', 'MS', 'OA', 'PC', 'PQ', 'SD'";
+            $('#cboMeasureItem').combobox({
+                //url: '../common/xml/CallBizJson.aspx?sp_name=BR_IM_COM_GET_COMMONCODE_CBO&LANGID=' + XSSReplace( $("[id$=hidLangID]").val()  , 1) + '&CMCDTYPE=MeasureItem&CBOOPT=OPT|CMCODE|CMCDNAME',
+                url: '../common/xml/CallBizJson.aspx?sp_name=BR_CUS_SEL_COMMONCODE_CBO_CMCODE&LANGID=' + XSSReplace( $("[id$=hidLangID]").val()  , 1) + '&CMCDTYPE=' + param1 + '&CMCODE=' + param2 + '&CBOOPT=OPT|CMCODE|CMCDNAME',
+                valueField: 'CMCODE',
+                textField: 'CMCDNAME',
+                onLoadSuccess: function () {
+                    var items = $(this).combobox("getData");
+                    if (items.length === 2) {
+                        var opts = $(this).combobox("options");
+                        $(this).combobox("select", items[1][opts.valueField]);
+                    }
+                },
+                onLoadSuccess: function () {
+                    var autoSelect = false;
+                    var MeasureItem = $("[id$=hidMeasureID]").val();
+                    if ($(this).combobox("getData").length > 0) {
+                        var items = $(this).combobox("getData");
+                        var opts = $(this).combobox("options");
+                        var strIn = false;
+                        for (var i = 0; i < items.length; i++) {
+                            if (items[i][opts.valueField] == MeasureItem) { // 콤보박스 데이터가 있다면 있음 표시 하고 SELECT될 수 있도록 한다.
+                                strIn = true;
+                                break;
+                            }
+                        }
+                        if (strIn) {
+                            $(this).combobox("select", MeasureItem);
+                        } else {
+                            autoSelect = true;
+                        }
+                    } else {
+                        autoSelect = true;
+                    }
+
+                    if (autoSelect) {
+
+                        var items = $(this).combobox("getData");
+                        if (items.length === 2) {
+                            var opts = $(this).combobox("options");
+                            $(this).combobox("select", items[1][opts.valueField]);
+                        }
+                    }
+                }
+            });
+        }
+
+
+
+
+
+        //#endregion
+        <%-- Main Event --%>
+        function onButtonSave() {
+
+        }
+
+        //==============================================================
+        //== Function ==================================================
+        function SaveFlag(id, JData) {
+            if (JData[0].RETURN = "OK") {
+                xAlert(msgSaveSuccess);
+            }
+            else {
+                xAlert(JData[0].MESSAGE);
+            }
+        }
+
+        function xInitPage() {
+            AutoHeightSpread();
+        };
+
+        function AutoHeightSpread() {
+            var gridMaster = document.getElementById("UCRealgrid");
+
+            //var searchHeight = document.getElementById("divSearchArea").clientHeight;
+            //var buttonHeight = document.getElementById("divButtonArea").clientHeight;
+            var pageHeight = document.documentElement.clientHeight;
+
+            var i = 0;
+            i = pageHeight - 140;// - (searchHeight + searchHeight);
+
+            gridMaster.style.height = String(i) + 'px';
+
+            UCRealgrid.ResetSize();
+        }
+
+
+
+        function onButtonClick(id) {
+            /// <summary>버튼 클릭 이벤트 후 처리</summary>  
+            /// <param name="name" type="string">버튼 ID</param> 
+            try {
+                switch (id) {
+                    case "btnForm":         //Excel Form DowniLoad
+                        var setFileNM;
+                        var itemid = $('#cboMeasureItem').combobox('getValue');
+                        if (itemid == "EE") {
+                            if (XSSReplace($("[id$=hidShopID]").val()   , 1) == '3070') { // 청주
+                                setFileNM = "EE_form(ChengJu)_rev01.xlsx";   //전력량 엑셀 폼
+                                ShowWinPopup_Center('/ReportDownloadHandler.ashx?FormNM=' + encodeURI(setFileNM), "Report View", '800', '600');
+                                break;
+                            } else if (XSSReplace($("[id$=hidShopID]").val()   , 1) == 'H010') { // 익산
+                                setFileNM = "EE_form(IkSan).xlsx";   //전력량 엑셀 폼
+                                ShowWinPopup_Center('/ReportDownloadHandler.ashx?FormNM=' + encodeURI(setFileNM), "Report View", '800', '600');
+                                break;
+                            } else if (XSSReplace($("[id$=hidShopID]").val()   , 1) == 'G621') { // 우시
+                                setFileNM = "EE_form(Wuxi).xlsx";   //전력량 엑셀 폼
+                                ShowWinPopup_Center('/ReportDownloadHandler.ashx?FormNM=' + encodeURI(setFileNM), "Report View", '800', '600');
+                                break;
+                            }
+                        }
+                        if (itemid == "OA") {
+                            if (XSSReplace($("[id$=hidShopID]").val()   , 1) == '3070') { // 청주
+                                setFileNM = "OA_form(ChengJu)_rev01.xlsx";   // 산소량 엑셀폼
+                                ShowWinPopup_Center('/ReportDownloadHandler.ashx?FormNM=' + encodeURI(setFileNM), "Report View", '800', '600');
+                                break;
+                            } else if (XSSReplace($("[id$=hidShopID]").val()   , 1) == 'H010') { // 익산
+                                setFileNM = "OA_form(IkSan).xlsx";   // 산소량 엑셀폼
+                                ShowWinPopup_Center('/ReportDownloadHandler.ashx?FormNM=' + encodeURI(setFileNM), "Report View", '800', '600');
+                                break;
+                            } else if (XSSReplace($("[id$=hidShopID]").val()   , 1) == 'G621') { // 우시
+                                setFileNM = "OA_form(Wuxi).xlsx";   // 산소량 엑셀폼
+                                ShowWinPopup_Center('/ReportDownloadHandler.ashx?FormNM=' + encodeURI(setFileNM), "Report View", '800', '600');
+                                break;
+                            }
+                        }
+                        if (itemid == "PC") {
+                            if (XSSReplace($("[id$=hidShopID]").val()   , 1) == '3070') { // 청주 
+                                setFileNM = "PC_form(ChengJu)_rev01.xlsx";   // 소성용기사용 엑셀폼
+                                ShowWinPopup_Center('/ReportDownloadHandler.ashx?FormNM=' + encodeURI(setFileNM), "Report View", '800', '600');
+                                break;
+                            } else if (XSSReplace($("[id$=hidShopID]").val()   , 1) == 'H010') { // 익산
+                                setFileNM = "PC_form(IkSan).xlsx";   // 소성용기사용 엑셀폼
+                                ShowWinPopup_Center('/ReportDownloadHandler.ashx?FormNM=' + encodeURI(setFileNM), "Report View", '800', '600');
+                                break;
+                            } else if (XSSReplace($("[id$=hidShopID]").val()   , 1) == 'G621') { // 우시
+                                setFileNM = "PC_form(Wuxi).xlsx";   // 소성용기사용 엑셀폼
+                                ShowWinPopup_Center('/ReportDownloadHandler.ashx?FormNM=' + encodeURI(setFileNM), "Report View", '800', '600');
+                                break;
+                            }
+                        }
+                        if (itemid == "PQ") {
+                            if (XSSReplace($("[id$=hidShopID]").val()   , 1) == '3070' || XSSReplace($("[id$=hidShopID]").val()   , 1) == 'G621') { // 청주 or 우시
+                                // 익산만 사용
+                                break;
+                            } else if (XSSReplace($("[id$=hidShopID]").val()   , 1) == 'H010') { // 익산
+                                setFileNM = "PQ_form(IkSan).xlsx";   // 산소량 엑셀폼
+                                ShowWinPopup_Center('/ReportDownloadHandler.ashx?FormNM=' + encodeURI(setFileNM), "Report View", '800', '600');
+                                break;
+                            }
+                        }
+                        if (itemid == "SD") {
+                            if (XSSReplace($("[id$=hidShopID]").val()   , 1) == '3070') { // 청주 
+                                setFileNM = "SD_form(ChengJu)_rev01.xlsx";   // 소성용기사용 엑셀폼
+                                ShowWinPopup_Center('/ReportDownloadHandler.ashx?FormNM=' + encodeURI(setFileNM), "Report View", '800', '600');
+                                break;
+                            } else if (XSSReplace($("[id$=hidShopID]").val()   , 1) == 'H010') { // 익산
+                                setFileNM = "SD_form(IkSan).xlsx";   // 소성용기사용 엑셀폼
+                                ShowWinPopup_Center('/ReportDownloadHandler.ashx?FormNM=' + encodeURI(setFileNM), "Report View", '800', '600');
+                                break;
+                            } else if (XSSReplace($("[id$=hidShopID]").val()   , 1) == 'G621') { // 우시
+                                setFileNM = "SD_form(Wuxi).xlsx";   // 소성용기사용 엑셀폼
+                                ShowWinPopup_Center('/ReportDownloadHandler.ashx?FormNM=' + encodeURI(setFileNM), "Report View", '800', '600');
+                                break;
+                            }
+                        }
+                        if (itemid == "MS") {
+                            if (XSSReplace($("[id$=hidShopID]").val()   , 1) == '3070') { // 청주 
+                                setFileNM = "MS_form(ChengJu).xlsx";   // 소성용기사용 엑셀폼
+                                ShowWinPopup_Center('/ReportDownloadHandler.ashx?FormNM=' + encodeURI(setFileNM), "Report View", '800', '600');
+                                break;
+                            } else if (XSSReplace($("[id$=hidShopID]").val()   , 1) == 'H010') { // 익산
+                                setFileNM = "MS_form(IkSan).xlsx";   // 소성용기사용 엑셀폼
+                                ShowWinPopup_Center('/ReportDownloadHandler.ashx?FormNM=' + encodeURI(setFileNM), "Report View", '800', '600');
+                                break;
+                            } else if (XSSReplace($("[id$=hidShopID]").val()   , 1) == 'G621') { // 우시
+                                setFileNM = "MS_form(Wuxi).xlsx";   // 소성용기사용 엑셀폼
+                                ShowWinPopup_Center('/ReportDownloadHandler.ashx?FormNM=' + encodeURI(setFileNM), "Report View", '800', '600');
+                                break;
+                            }
+                        }
+                        if (itemid == "CA") { //2022.07.06 강민규 C20220623-000071 측정항목 Capa 추가
+                            if (XSSReplace($("[id$=hidShopID]").val()   , 1) == '3070') { // 청주 
+                                setFileNM = "CA_form(ChengJu).xlsx";   // 소성용기사용 엑셀폼
+                                ShowWinPopup_Center('/ReportDownloadHandler.ashx?FormNM=' + encodeURI(setFileNM), "Report View", '800', '600');
+                                break;
+                            } else if (XSSReplace($("[id$=hidShopID]").val()   , 1) == 'H010') { // 익산
+                                setFileNM = "CA_form(IkSan).xlsx";   // 소성용기사용 엑셀폼
+                                ShowWinPopup_Center('/ReportDownloadHandler.ashx?FormNM=' + encodeURI(setFileNM), "Report View", '800', '600');
+                                break;
+                            } else if (XSSReplace($("[id$=hidShopID]").val()   , 1) == 'G621') { // 우시
+                                setFileNM = "CA_form(Wuxi).xlsx";   // 소성용기사용 엑셀폼
+                                ShowWinPopup_Center('/ReportDownloadHandler.ashx?FormNM=' + encodeURI(setFileNM), "Report View", '800', '600');
+                                break;
+                            }
+                        }
+                        else {
+                            xAlert(" <%=lang.message["20071"]%>");
+                            break;
+                        }
+
+                    case "btnExcelUpLoad":  //Excel UpLoad                   
+                        $("#uploadFile").click();
+                        break;
+
+                        break;
+                    case "btnSave":         //Excel Save
+                        SaveData();
+                        break;
+                    case "btnClose":
+                        CloseTab();
+                    default:
+                        break;
+                }
+            } catch (e) {
+                xAlert(e.message);
+            }
+        }
+
+        function CloseTab() {
+            parent.CallBackCloseDialog();
+        };
+
+        var totalSendOKCount = 0; // 업로드 성공 Count
+        var sendCount = 0;        // 업로드 보낸 Count
+        var totalSetCount = 0;    // 업로드 세트 수
+        var sendSetCount = 0;     // 업로드 전송 세트 수
+
+        function SaveData() {
+            var items = $('#cboMeasureItem').combobox('getValue');
+            var _msg = "<%=lang.message["25068"]%>";
+            if (items == undefined || items == '') {
+                _msg = _msg.replace("%1", "<%=lang.word["Measure Item"]%>");
+                xAlert(_msg);
+                return;
+            }
+            $("#inputMsg").text("");
+            var chkRows = UCRealgrid_gridView.getCheckedRows();
+            if (chkRows.length < 1) {
+                $("#inputMsg").text("<%=lang.message["60001"]%>");
+                return;
+            }
+
+            for (var i = chkRows.length - 1; i >= 0; i--) {
+                var MODIFY_YN = UCRealgrid_dataProvider.getValue(chkRows[i], "MODIFY_YN");
+                if (MODIFY_YN == 'N') {
+                    $("#inputMsg").text("<%=lang.message["60002"]%>");//마감날짜가 지난 ROW 체크를 해제 해주시기 바랍니다.
+                    return;
+                }
+                var MTRLID_YN = UCRealgrid_dataProvider.getValue(chkRows[i], "MTRLID_YN");
+                if (MTRLID_YN == 'N') {
+                    $("#inputMsg").text("<%=lang.message["26120"]%>");//제품코드가 존재하지 않습니다.
+                    return;
+                }
+            }
+            UCRealgrid.Commit(true);
+            ShowLoading();
+
+            //if (UCRealgrid_dataProvider.getRowCount() > 0) {
+            if (chkRows.length > 0) {
+                totalSetCount = chkRows.length; //저장대상 Cnt
+                for (var index = 0; index < (totalSetCount / 100 - totalSetCount % 100 / 100) + 1; index++) { // 100개씩 나눠서 저장(xml 버퍼 할당량 초과)
+                    var url = "/GMES_IM_POM/GMES_IMES_0240_1.aspx/ExecuteData";
+                    var param = {};
+                    var items = [];
+                    var subInsertRows = [];
+
+                    if (index == totalSetCount / 100 - totalSetCount % 100 / 100) {
+                        for (var i = 0; i < totalSetCount - 100 * index; i++) { // 마지막 100개 행은 100개가 안되므로...
+                            var ItemValue = UCRealgrid_dataProvider.getJsonRow(chkRows[index * 100 + i]);
+                            var TempEQPTID;
+                            if (ItemValue.EQSGID == '*') {
+                                TempEQPTID = ItemValue.AREAID + '|' + ItemValue.EQSGID + '|' + ItemValue.SEPARARTION_TYPE;
+                            } else {
+                                TempEQPTID = ItemValue.EQSGID + '|' + ItemValue.SEPARATION_TYPE;
+                            }
+
+                            TempEQPTID = TempEQPTID.replaceAll(" " , "");
+                            if (ItemValue.AREAID != null) {
+                                subInsertRows[i] = [
+                                { name: "LANGID", value: '<%=SSUser.LangID%>', dataType: _DataType.String }
+                                    , { name: "SHOPID", value: XSSReplace($("[id$=hidShopID]").val()   , 1), dataType: _DataType.String }
+                                    , { name: "AREAID", value: ItemValue.AREAID, dataType: _DataType.String }
+                                    , { name: "EQSGID", value: ItemValue.EQSGID, dataType: _DataType.String }
+                                    , { name: "EQPTID", value: TempEQPTID, dataType: _DataType.String }
+                                    , { name: "DATA_TYPE", value: $('#cboMeasureItem').combobox('getValue'), dataType: _DataType.String }
+                                    , { name: "SEPARATION_TYPE", value: ItemValue.SEPARATION_TYPE.replaceAll(" ", ""), dataType: _DataType.String }
+                                    , { name: "USEDATE", value: ItemValue.USEDATE, dataType: _DataType.String }
+                                    , { name: "USEQTY", value: ItemValue.MODIFIED_VALUE, dataType: _DataType.String }
+                                    , { name: "UNITCOST", value: ItemValue.COST, dataType: _DataType.String }
+                                    , { name: "PRODID", value: ItemValue.PRODID, dataType: _DataType.String }
+                                    //, { name: "PRODNAME", value: ItemValue.PRODNAME, dataType: _DataType.String }
+                                    , { name: "ATTR1", value: ItemValue.ATTR1, dataType: _DataType.String }
+                                    , { name: "ATTR2", value: ItemValue.ATTR2, dataType: _DataType.String }
+                                    , { name: "ATTR3", value: ItemValue.ATTR3, dataType: _DataType.String }
+                                    , { name: "ATTR4", value: ItemValue.ATTR4, dataType: _DataType.String }
+                                    , { name: "ATTR5", value: ItemValue.ATTR5, dataType: _DataType.String }
+                                    , { name: "USERID", value: "<%=SSUser.UserID%>", dataType: _DataType.String }
+                                ];
+                            }
+                        }
+
+                        items[0] = subInsertRows
+
+                        param.bizID = "BR_IM_PRD_REG_MEASREMENT";
+                        param.items = items;
+                        param.inTableNames = 'INDATA';
+                        param.outTableNames = '';
+                        sendRequestMethod(function () {
+                            if (data != null) {
+                                if (data[0].RETURN != "OK") {
+                                    xAlert(data[0].MESSAGE);
+                                    CloseLoading();
+                                    return;
+                                };
+                            };
+                            if (index >= totalSetCount / 100) { // 마지막 저장 때만, 저장 메세지 출력 후 POP-UP 닫음
+                                xAlert('<%=lang.message["10004"]%>');
+                                CloseLoading();
+                                CloseTab();
+                            }
+
+                        }, param, "POST", url);
+                    }
+
+                    else {
+                        for (var i = 0; i < 100; i++) {
+                            var ItemValue = UCRealgrid_dataProvider.getJsonRow(chkRows[index * 100 + i]);
+                            var TempEQPTID;
+                            if (ItemValue.EQSGID == '*') {
+                                TempEQPTID = ItemValue.AREAID + '|' + ItemValue.EQSGID + '|' + ItemValue.SEPARATION_TYPE;
+                            } else {
+                                TempEQPTID = ItemValue.EQSGID + '|' + ItemValue.SEPARATION_TYPE;
+                            }
+
+                            TempEQPTID = TempEQPTID.replaceAll(" ", "");
+                            subInsertRows[i] = [
+                                { name: "LANGID", value: '<%=SSUser.LangID%>', dataType: _DataType.String }
+                                , { name: "SHOPID", value: XSSReplace($("[id$=hidShopID]").val()   , 1), dataType: _DataType.String }
+                                , { name: "AREAID", value: ItemValue.AREAID, dataType: _DataType.String }
+                                , { name: "EQSGID", value: ItemValue.EQSGID, dataType: _DataType.String }
+                                , { name: "EQPTID", value: TempEQPTID, dataType: _DataType.String }
+                                , { name: "DATA_TYPE", value: $('#cboMeasureItem').combobox('getValue'), dataType: _DataType.String }
+                                , { name: "SEPARATION_TYPE", value: ItemValue.SEPARATION_TYPE.replaceAll(" ", ""), dataType: _DataType.String }
+                                , { name: "USEDATE", value: ItemValue.USEDATE, dataType: _DataType.String }
+                                , { name: "USEQTY", value: ItemValue.MODIFIED_VALUE, dataType: _DataType.String }
+                                , { name: "UNITCOST", value: ItemValue.COST, dataType: _DataType.String }
+                                , { name: "PRODID", value: ItemValue.PRODID, dataType: _DataType.String }
+                                //, { name: "PRODNAME", value: ItemValue.PRODNAME, dataType: _DataType.String }
+                                , { name: "ATTR1", value: ItemValue.ATTR1, dataType: _DataType.String }
+                                , { name: "ATTR2", value: ItemValue.ATTR2, dataType: _DataType.String }
+                                , { name: "ATTR3", value: ItemValue.ATTR3, dataType: _DataType.String }
+                                , { name: "ATTR4", value: ItemValue.ATTR4, dataType: _DataType.String }
+                                , { name: "ATTR5", value: ItemValue.ATTR5, dataType: _DataType.String }
+                                , { name: "USERID", value: "<%=SSUser.UserID%>", dataType: _DataType.String }
+                            ];
+                        }
+
+
+                        items[0] = subInsertRows
+
+                        param.bizID = "BR_IM_PRD_REG_MEASREMENT";
+                        param.items = items;
+                        param.inTableNames = 'INDATA';
+                        param.outTableNames = '';
+                        sendRequestMethod(function () {
+                            if (data != null) {
+                                if (data[0].RETURN != "OK") {
+                                    xAlert(data[0].MESSAGE);
+                                    CloseLoading();
+                                    return;
+                                }
+                            };
+                        }, param, "POST", url);
+                    }
+                }
+            }
+        }
+
+        function callback(id, data) {
+            //if (data == null) return;
+
+            //totalSendOKCount = totalSendOKCount + data[0].OUTDATA.length;
+
+        }
+
+        function getFormatDate(date) {
+            var dateArray = date.split('/');
+            var year = '20' + dateArray[2];              //yyyy
+            var month = dateArray[0];
+            month = month >= 10 ? month : '0' + month;  //month 두자리로 저장
+            var day = dateArray[1];
+            day = day >= 10 ? day : '0' + day;          //day 두자리로 저장
+            return year + '-' + month + '-' + day;
+        }
+
+        function getFormatInt(num) {
+            var returnNum;
+            if (num == ' - ') { // 복붙해서 Excel 입력하는 중에, 0인 값 -> ' - '로 저장 되는 경우
+                returnNum = 0;
+            } else if (num == '' || num == null) { // 입력 안한 경우
+                returnNum = 0;
+            } else { // 숫자 양식 ',' 포함 경우 
+                returnNum = num.replace(/\,/g, '');
+            }
+            return returnNum;
+        }
+
+        // 2022.02.23 MODIFY_YN 함수에서 getCHK_YN함수로 교체
+        // MODIFY_YN값과 MTRLID_YN 값을 한번에 BIZ OUTDATA에서 받는 형식으로 교체함
+        function getCHK_YN() {
+            var items = $('#cboMeasureItem').combobox('getValue');
+            var _msg = "<%=lang.message["25068"]%>";
+            if (items == undefined || items == '') {
+                _msg = _msg.replace("%1", "<%=lang.word["Measure Item"]%>");
+                xAlert(_msg);
+                return;
+            }
+            $("#inputMsg").text("");
+            var chkRows = UCRealgrid_gridView.getCheckedRows();
+            if (chkRows.length < 1) {
+                $("#inputMsg").text("<%=lang.message["60001"]%>");
+                return;
+            }
+
+
+            if (chkRows.length > 0) {
+                totalSetCount = chkRows.length;
+                for (var index = 0; index < (totalSetCount / 100 - totalSetCount % 100 / 100) + 1; index++) { // 100개씩 나눠서 저장(xml 버퍼 할당량 초과)
+
+                    var url = "/GMES_IM_POM/GMES_IMES_0240_1.aspx/GetData";
+                    var param = {};
+                    var items = [];
+                    var subInsertRows = [];
+                    if (index == totalSetCount / 100 - totalSetCount % 100 / 100) {
+                        for (var i = 0; i < totalSetCount - 100 * index; i++) { // 마지막 100개 행은 100개가 안되므로...
+                            var ItemValue = UCRealgrid_dataProvider.getJsonRow(chkRows[index * 100 + i]);
+                            var MTRLID;
+                            if ($('#cboMeasureItem').combobox('getValue') == "MS" || $('#cboMeasureItem').combobox('getValue') == "CA") {
+                                MTRLID = ItemValue.SEPARATION_TYPE;
+                            }
+                            if (ItemValue.EQSGID == "" || ItemValue.AREAID == "" || ItemValue.SEPARATION_TYPE == "") {
+                                UCRealgrid_gridView.checkItem(index * 100 + i, false);
+                            }
+                            subInsertRows[i] = [
+                                    { name: "LANGID", value: '<%=SSUser.LangID%>', dataType: _DataType.String }
+                                    , { name: "MENUID", value: "IUSM411001", dataType: _DataType.String }
+                                    , { name: "USEDATE", value: ItemValue.USEDATE, dataType: _DataType.String }
+                                    , { name: "SHOPID", value: XSSReplace($("[id$=hidShopID]").val()   , 1), dataType: _DataType.String }
+                                    , { name: "DATA_TYPE", value: $('#cboMeasureItem').combobox('getValue'), dataType: _DataType.String }
+                                    , { name: "MTRLID", value: MTRLID, dataType: _DataType.String }
+                                    , { name: "NUM", value: index, dataType: _DataType.String }
+                            ];
+                        }
+
+                        items[0] = subInsertRows
+
+                        param.bizID = "BR_IM_PRD_CHK_EXCELDATA";
+                        param.items = items;
+                        param.inTableNames = 'INDATA';
+                        param.outTableNames = 'OUTDATA';
+                        sendRequestMethod(function () {
+                            if (data != null) {
+                                if (data[0].RETURN != "OK") {
+                                    data.forEach(function (item, num) {
+                                        UCRealgrid_dataProvider.setValue(item.NUM * 100 + num, "MODIFY_YN", item.MODIFY_YN);
+                                        UCRealgrid_dataProvider.setValue(item.NUM * 100 + num, "MTRLID_YN", item.MTRLID_YN);
+                                        if (item.MODIFY_YN == "N" || item.MODIFY_YN == "" || item.MTRLID_YN == "N") {
+                                            UCRealgrid_gridView.checkItem(item.NUM * 100 + num, false);
+                                            if (item.MTRLID_YN == "N") {
+                                                xAlert('<%=lang.message["26120"]%>');//제품코드가 존재하지 않습니다.
+                                        }
+                                    }
+                                    })
+                                    //CloseLoading(); //22.03.02 강민규 삭제
+                                return;
+                            };
+                        };
+                        }, param, "POST", url);
+
+                    UCRealgrid_gridView.setStyles({
+                        body: {
+                            dynamicStyles: [
+                                        {
+                                            criteria: "value['MODIFY_YN'] = 'N'",
+                                            styles: { background: "#FFFEFFBB" }
+                                        },
+                                        {
+                                            criteria: "value['MODIFY_YN'] = ''",
+                                            styles: { background: "#FFFEAAAA" }
+                                        },
+                                        {
+                                            criteria: "value['MTRLID_YN'] = 'N'",
+                                            styles: { background: "#FFFEAABB" }
+                                        },
+                                        {
+                                            criteria: "value['AREAID'] = ''",
+                                            styles: { background: "#FFFEAAAA" }
+                                        },
+                                        {
+                                            criteria: "value['EQSGID'] = ''",
+                                            styles: { background: "#FFFEAAAA" }
+                                        },
+                                        {
+                                            criteria: "value['UTILID'] = ''",
+                                            styles: { background: "#FFFEAAAA" }
+                                        },
+                                        {
+                                            criteria: "value['SEPARATION_TYPE'] = ''",
+                                            styles: { background: "#FFFEAAAA" }
+                                        }]
+                        }
+                    });
+                } else {
+                    for (var i = 0; i < 100; i++) {
+                        var ItemValue = UCRealgrid_dataProvider.getJsonRow(chkRows[index * 100 + i]);
+
+                        var MTRLID;
+                        if ($('#cboMeasureItem').combobox('getValue') == "MS" || $('#cboMeasureItem').combobox('getValue') == "CA") {
+                            MTRLID = ItemValue.SEPARATION_TYPE;
+                            if (MTRLID == "") {
+                                UCRealgrid_gridView.checkItem(index * 100 + i, false);
+                            }
+                        } else {
+                            if (ItemValue.SEPARATION_TYPE_NAME == "") {
+                                UCRealgrid_gridView.checkItem(index * 100 + i, false);
+                            }
+                        }
+                        if (ItemValue.EQSGID == "" || ItemValue.AREAID == "") {
+                            UCRealgrid_gridView.checkItem(index * 100 + i, false);
+                        }
+
+                        subInsertRows[i] = [
+                                { name: "LANGID", value: '<%=SSUser.LangID%>', dataType: _DataType.String }
+                                    , { name: "MENUID", value: "IUSM411001", dataType: _DataType.String }
+                                    , { name: "USEDATE", value: ItemValue.USEDATE, dataType: _DataType.String }
+                                    , { name: "SHOPID", value: XSSReplace($("[id$=hidShopID]").val()   , 1), dataType: _DataType.String }
+                                    , { name: "DATA_TYPE", value: $('#cboMeasureItem').combobox('getValue'), dataType: _DataType.String }
+                                    , { name: "MTRLID", value: MTRLID, dataType: _DataType.String }
+                                    , { name: "NUM", value: index, dataType: _DataType.String }
+                        ];
+                    }
+
+                    items[0] = subInsertRows
+
+                    param.bizID = "BR_IM_PRD_CHK_EXCELDATA";
+                    param.items = items;
+                    param.inTableNames = 'INDATA, ';
+                    param.outTableNames = 'OUTDATA';
+                    sendRequestMethod(function () {
+                        if (data[0].RETURN != "OK") {
+                            data.forEach(function (item, num) {
+                                UCRealgrid_dataProvider.setValue(item.NUM * 100 + num, "MODIFY_YN", item.MODIFY_YN);
+                                UCRealgrid_dataProvider.setValue(item.NUM * 100 + num, "MTRLID_YN", item.MTRLID_YN);
+                                if (item.MODIFY_YN == "N" || item.MODIFY_YN == "" || item.MTRLID_YN == "N") {
+                                    UCRealgrid_gridView.checkItem(item.NUM * 100 + num, false);
+                                    if (item.MTRLID_YN == "N") {
+                                        xAlert('<%=lang.message["26120"]%>');//제품코드가 존재하지 않습니다.
+                                    }
+                                }
+                                })
+                                //CloseLoading(); //22.03.02 강민규 삭제
+                            return;
+                        };
+                        }, param, "POST", url);
+                }
+            }
+        }
+    }
+    function ExcelImport(e) {
+        /// <summary>엑셀 파일을 읽어 들여 그리드에 표시한다.</summary>
+        var count = 1;
+        var rABS = typeof FileReader !== "undefined" && (FileReader.prototype || {}).readAsBinaryString;
+        //var file = f.value;
+        var f = e.target.files[0];
+        var check = f.name.toString();
+        var reader = new FileReader();
+        var result = [];
+        var roa = {};
+        var state;
+            <%--reader.onload = function (e) {
+                var count = 1;
+                var data = e.target.result;
+                if (!rABS) data = new Uint8Array(data);
+                var workbook = XLSX.read(data, { type: rABS ? 'binary' : 'array' });
+                var sheet_name_list = workbook.SheetNames;
+                sheet_name_list.forEach(function (y) {
+                    var roa = XLSX.utils.sheet_to_json(workbook.Sheets[y], { header: 1 });
+                    if (count == 1) {
+                        for (var i = 1; i < roa.length - 1; i++) {
+                            if (roa[i][0] == null || roa[i][1] == null || roa[i][2] == null || roa[i][3] == null || roa[i][4] == null || roa[i][5] == null || roa[i][6] == null) {
+                                return;
+                            }
+                            var values = {
+                                USEDATE: (roa[i][0].split("/").length > 1) ? getFormatDate(roa[i][0]) : roa[i][0]
+                                , AREAID: roa[i][2]
+                                , AREANAME: roa[i][1]
+                                , EQSGID: roa[i][4]
+                                , EQSGNAME: roa[i][3]
+                                , SEPARATION_TYPE: roa[i][6]
+                                , SEPARATION_TYPE_NAME: roa[i][5]
+                                , MODIFIED_VALUE: getFormatInt(roa[i][7])
+                                , COST: getFormatInt(roa[i][8])
+                            };
+                            rowNo = UCRealgrid.GetRowCount();
+                            UCRealgrid_dataProvider.insertRow(rowNo, values);
+                            if (values.EQSGID != null) {
+                                SetButtonEnable("#btnSave", true);
+                            }
+                            else {
+                                xAlert('<%=lang.message["10032"]%>');
+                                return;
+                            }
+                        }
+                    }
+                    count += 1;
+                });
+            }--%>
+        //ShowLoading(); // MODIFY YN 체크가 끝날 때 까지 Loading 화면 //22.03.02 강민규 삭제
+        var MeasureVal = $('#cboMeasureItem').combobox('getValue');
+        if (check.indexOf("EE") != -1) {
+            //$('#cboMeasureItem').combobox("select", "EE");
+            if (MeasureVal != "EE") {
+                // msg(9017) : 업로드한 엑셀파일의 데이타가 잘못되었습니다. 확인 후 다시 처리하여 주십시오.
+                xAlert('<%=lang.message["9017"]%>');
+                    //CloseLoading(); //22.03.02 강민규 삭제
+                    return;
+                }
+                reader.onload = function (e) {
+
+                    var data = e.target.result;
+                    if (!rABS) data = new Uint8Array(data);
+                    var workbook = XLSX.read(data, { type: rABS ? 'binary' : 'array' });
+                    var sheet_name_list = workbook.SheetNames;
+                    var roa = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], { header: 1 });
+                    var CHKcheck = false; // getCHK_YN이 실행 됐는지 안됐는지 체크
+                    for (var i = 1; i < roa.length; i++) {  //2022.01.10 황유라 for (var i = 1; i < roa.length - 1; i++) {
+                        if (roa[i][0] == null) {
+                            getCHK_YN(); //2022.02.23 강민규 MODIFY_YN -> getCHK_YN 함수로 수정
+                            CHKcheck = true;
+                            return;
+                        } else if (roa[i][1] == null || roa[i][2] == null || roa[i][3] == null || roa[i][4] == null || roa[i][5] == null || roa[i][6] == null) {
+                            //입력이 제대로 안된 항목이 있습니다.
+                            xAlert('<%=lang.message["6030"]%>');
+                        }
+
+                    check = /[ㄱ-ㅎ|ㅏ-ㅣ|가-힣]/;
+                    if (check.test(roa[i][4]) || roa[i][4].indexOf(" ") != -1) {
+                        // 라인/실 코드가 잘못되었습니다. 업로드 양식을 확인하세요.
+                        xAlert('<%=lang.message["290015"]%>');
+                        return;
+                    }
+
+                    if (roa[i][6].indexOf("[") != -1 || roa[i][6].indexOf("]") != -1) {
+                        // 구분코드가 잘못되었습니다. 업로드 양식을 확인하세요.
+                        xAlert('<%=lang.message["290013"]%>');
+                            return;
+                        }
+
+
+                        /*** Upload File Index
+                         *   [0] : 사용일자
+                         *   [1] : 공장동명
+                         *   [2] : 공장동ID
+                         *   [3] : 라인명
+                         *   [4] : 라인ID
+                         *   [5] : 라인명
+                         *   [6] : 구분명
+                         *   [7] : 제품코드
+                         *   [8] : 사용량
+                         *   [9] : 단가
+                         ***/
+                        var values = {
+                            USEDATE: (roa[i][0].split("/").length > 1) ? getFormatDate(roa[i][0]) : roa[i][0]
+                            , AREAID: roa[i][2]
+                            , AREANAME: roa[i][1]
+                            , EQSGID: roa[i][4]
+                            , EQSGNAME: roa[i][3]
+                            , SEPARATION_TYPE: roa[i][6]
+                            , SEPARATION_TYPE_NAME: roa[i][5]
+                            , PRODID: roa[i][7]
+                            , MODIFIED_VALUE: getFormatInt(roa[i][8])
+                            , COST: getFormatInt(roa[i][9])
+                        };
+                        rowNo = UCRealgrid.GetRowCount();
+                        UCRealgrid_dataProvider.insertRow(rowNo, values);
+                        UCRealgrid_gridView.checkItem(rowNo, true); //2022.02.23 강민규 시작할때 모든값을 체크
+
+                        if (values.EQSGID != null) {
+                            SetButtonEnable("#btnSave", true);
+                        }
+                        else {
+                            xAlert('<%=lang.message["10032"]%>');
+                            //CloseLoading(); //22.03.02 강민규 삭제
+                            return;
+                        }
+                    }
+                    if (CHKcheck != true) {
+                        getCHK_YN();
+                    }
+                }
+            }
+            else if (check.indexOf("OA") != -1) {
+                //$('#cboMeasureItem').combobox("select", "OA");
+                if (MeasureVal != "OA") {
+                    // msg(9017) : 업로드한 엑셀파일의 데이타가 잘못되었습니다. 확인 후 다시 처리하여 주십시오.
+                    xAlert('<%=lang.message["9017"]%>');
+                    //CloseLoading(); //22.03.02 강민규 삭제
+                    return;
+                }
+                reader.onload = function (e) {
+                    var data = e.target.result;
+                    if (!rABS) data = new Uint8Array(data);
+                    var workbook = XLSX.read(data, { type: rABS ? 'binary' : 'array' });
+                    var sheet_name_list = workbook.SheetNames;
+                    var roa = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], { header: 1 });
+                    var CHKcheck = false; // getCHK_YN이 실행 됐는지 안됐는지 체크
+                    for (var i = 1; i < roa.length; i++) {  //2022.01.10 황유라 변경전 for (var i = 1; i < roa.length - 1; i++) {
+                        if (roa[i][0] == null) {
+                            getCHK_YN(); //2022.02.23 강민규 MODIFY_YN -> getCHK_YN 함수로 수정
+                            CHKcheck = true;
+                            return;
+                        } else if (roa[i][1] == null || roa[i][2] == null || roa[i][3] == null || roa[i][4] == null || roa[i][5] == null || roa[i][6] == null) {
+                            //입력이 제대로 안된 항목이 있습니다.
+                            xAlert('<%=lang.message["6030"]%>');
+                        }
+
+                        /*** Upload File Index
+                   *   [0] : 사용일자
+                   *   [1] : 공장동명
+                   *   [2] : 공장동ID
+                   *   [3] : 라인명
+                   *   [4] : 라인ID
+                   *   [5] : 라인명
+                   *   [6] : 구분명
+                   *   [7] : 제품코드
+                   *   [8] : 단위(Kg, MN3)
+                   *   [9] : 사용량
+                   *   [10] : 단가
+                   ***/
+
+                    var values = {
+                        USEDATE: (roa[i][0].split("/").length > 1) ? getFormatDate(roa[i][0]) : roa[i][0]
+                        , AREAID: roa[i][2]
+                        , AREANAME: roa[i][1]
+                        , EQSGID: roa[i][4]
+                        , EQSGNAME: roa[i][3]
+                        , SEPARATION_TYPE: roa[i][6]
+                        , SEPARATION_TYPE_NAME: roa[i][5]
+                        , PRODID: roa[i][7]
+                        , ATTR1: getFormatInt(roa[i][8])
+                        , MODIFIED_VALUE: getFormatInt(roa[i][9])
+                        , COST: getFormatInt(roa[i][10])
+                    };
+                    rowNo = UCRealgrid.GetRowCount();
+                    UCRealgrid_dataProvider.insertRow(rowNo, values);
+                    UCRealgrid_gridView.checkItem(rowNo, true); //2022.02.23 강민규 시작할때 모든값을 체크
+
+                    if (values.EQSGID != null) {
+                        SetButtonEnable("#btnSave", true);
+                    }
+                    else {
+                        xAlert('<%=lang.message["10032"]%>');
+                        //CloseLoading(); //22.03.02 강민규 삭제
+                        return;
+                    }
+                }
+                    if (CHKcheck != true) {
+                        getCHK_YN();
+                    }
+                }
+        }
+        else if (check.indexOf("PC") != -1) {
+            //$('#cboMeasureItem').combobox("select", "PC");
+            if (MeasureVal != "PC") {
+                // msg(9017) : 업로드한 엑셀파일의 데이타가 잘못되었습니다. 확인 후 다시 처리하여 주십시오.
+                xAlert('<%=lang.message["9017"]%>');
+                    //CloseLoading(); //22.03.02 강민규 삭제
+                    return;
+                }
+
+                reader.onload = function (e) {
+                    var data = e.target.result;
+                    if (!rABS) data = new Uint8Array(data);
+                    var workbook = XLSX.read(data, { type: rABS ? 'binary' : 'array' });
+                    var sheet_name_list = workbook.SheetNames;
+                    var roa = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], { header: 1 });
+                    var CHKcheck = false; // getCHK_YN이 실행 됐는지 안됐는지 체크
+                    for (var i = 1; i < roa.length; i++) {  //2022.01.10 황유라 변경전 for (var i = 1; i < roa.length - 1; i++) {
+                        if (roa[i][0] == null) {
+                            getCHK_YN(); //2022.02.23 강민규 MODIFY_YN -> getCHK_YN 함수로 수정
+                            CHKcheck = true;
+                            return;
+                        } else if (roa[i][1] == null || roa[i][2] == null || roa[i][3] == null || roa[i][4] == null || roa[i][5] == null || roa[i][6] == null) {
+                            //입력이 제대로 안된 항목이 있습니다.
+                            xAlert('<%=lang.message["6030"]%>');
+                        }
+
+                        /*** Upload File Index
+                         *   [0] : 사용일자
+                         *   [1] : 공장동명
+                         *   [2] : 공장동ID
+                         *   [3] : 라인명
+                         *   [4] : 라인ID
+                         *   [5] : 라인명
+                         *   [6] : 구분명
+                         *   [7] : 제품코드
+                         *   [8] : 단위(Kg, MN3)
+                         *   [9] : 사용량
+                         *   [10] : 단가
+                         ***/
+                    var values = {
+                        USEDATE: (roa[i][0].split("/").length > 1) ? getFormatDate(roa[i][0]) : roa[i][0]
+                        , AREAID: roa[i][2]
+                        , AREANAME: roa[i][1]
+                        , EQSGID: roa[i][4]
+                        , EQSGNAME: roa[i][3]
+                        , SEPARATION_TYPE: roa[i][6]
+                        , SEPARATION_TYPE_NAME: roa[i][5]
+                        , PRODID: roa[i][7]
+                        , MODIFIED_VALUE: getFormatInt(roa[i][8])
+                    };
+                    rowNo = UCRealgrid.GetRowCount();
+                    UCRealgrid_dataProvider.insertRow(rowNo, values);
+                    UCRealgrid_gridView.checkItem(rowNo, true); //2022.02.23 강민규 시작할때 모든값을 체크
+
+
+                    if (values.EQSGID != null) {
+                        SetButtonEnable("#btnSave", true);
+                    }
+                    else {
+                        xAlert('<%=lang.message["10032"]%>');
+                        //CloseLoading(); //22.03.02 강민규 삭제
+                        return;
+                    }
+                }
+                    if (CHKcheck != true) {
+                        getCHK_YN();
+                    }
+                }
+        }
+        else if (check.indexOf("PQ") != -1) {
+            //$('#cboMeasureItem').combobox("select", "OA");
+            if (MeasureVal != "PQ") {
+                // msg(9017) : 업로드한 엑셀파일의 데이타가 잘못되었습니다. 확인 후 다시 처리하여 주십시오.
+                xAlert('<%=lang.message["9017"]%>');
+                    return;
+                }
+                reader.onload = function (e) {
+
+                    var data = e.target.result;
+                    if (!rABS) data = new Uint8Array(data);
+                    var workbook = XLSX.read(data, { type: rABS ? 'binary' : 'array' });
+                    var sheet_name_list = workbook.SheetNames;
+                    var roa = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], { header: 1 });
+                    var CHKcheck = false;
+                    for (var i = 1; i < roa.length; i++) {  //2022.01.10 황유라 변경전 for (var i = 1; i < roa.length - 1; i++) {
+                        if (roa[i][0] == null) {
+                            getCHK_YN(); //2022.02.23 강민규 MODIFY_YN -> getCHK_YN 함수로 수정
+                            CHKcheck = true;
+                            return;
+                        } else if (roa[i][1] == null || roa[i][2] == null || roa[i][3] == null || roa[i][4] == null || roa[i][5] == null || roa[i][6] == null) {
+                            //입력이 제대로 안된 항목이 있습니다.
+                            xAlert('<%=lang.message["6030"]%>');
+                        }
+                        /*** Upload File Index
+                          *   [0] : 사용일자
+                          *   [1] : 공장동명
+                          *   [2] : 공장동ID
+                          *   [3] : 라인명
+                          *   [4] : 라인ID
+                          *   [5] : 라인명
+                          *   [6] : 구분명
+                          *   [7] : 제품코드
+                          *   [8] : 단위(Kg, MN3)
+                          *   [9] : 사용량
+                          *   [10] : 단가
+                        ***/
+                    var values = {
+                        USEDATE: (roa[i][0].split("/").length > 1) ? getFormatDate(roa[i][0]) : roa[i][0]
+                        , AREAID: roa[i][2]
+                        , AREANAME: roa[i][1]
+                        , EQSGID: roa[i][4]
+                        , EQSGNAME: roa[i][3]
+                        , SEPARATION_TYPE: roa[i][6]
+                        , SEPARATION_TYPE_NAME: roa[i][5]
+                        , PRODID: roa[i][7]
+                        , MODIFIED_VALUE: getFormatInt(roa[i][8])
+                    };
+                    rowNo = UCRealgrid.GetRowCount();
+                    UCRealgrid_dataProvider.insertRow(rowNo, values);
+                    UCRealgrid_gridView.checkItem(rowNo, true); //2022.02.23 강민규 시작할때 모든값을 체크
+
+
+                    if (values.EQSGID != null) {
+                        SetButtonEnable("#btnSave", true);
+                    }
+                    else {
+                        xAlert('<%=lang.message["10032"]%>');
+                        return;
+                    }
+                }
+                    if (CHKcheck != true) {
+                        getCHK_YN();
+                    }
+                }
+        }
+        else if (check.indexOf("SD") != -1) {
+            //$('#cboMeasureItem').combobox("select", "OA");
+            if (MeasureVal != "SD") {
+                // msg(9017) : 업로드한 엑셀파일의 데이타가 잘못되었습니다. 확인 후 다시 처리하여 주십시오.
+                xAlert('<%=lang.message["9017"]%>');
+                    //CloseLoading(); //2021.12.14 황유라 //22.03.02 강민규 삭제
+                    return;
+                }
+
+                reader.onload = function (e) {
+                    try {
+                        var alertCall = 0;
+                        var data = e.target.result;
+                        if (!rABS) data = new Uint8Array(data);
+                        var workbook = XLSX.read(data, { type: rABS ? 'binary' : 'array' });
+                        //var sheet_name_list = workbook.SheetNames;
+                        var roa = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], { header: 1 });
+                        var CHKcheck = false;
+                        for (var i = 1; i < roa.length; i++) {
+                            if (roa[i][0] == null) {
+                                getCHK_YN(); //2022.02.23 강민규 MODIFY_YN -> getCHK_YN 함수로 수정
+                                CHKcheck = true;
+                                return;
+                            }
+                            else if (roa[i][1] == null || roa[i][2] == null || roa[i][3] == null || roa[i][4] == null || roa[i][5] == null || roa[i][6] == null) {
+                                //입력이 제대로 안된 항목이 있습니다.
+                                xAlert('<%=lang.message["6030"]%>');
+                            }
+
+                            /*** Upload File Index
+                             *   [0] : 사용일자
+                             *   [1] : 공장동명
+                             *   [2] : 공장동ID
+                             *   [3] : 라인명
+                             *   [4] : 라인ID
+                             *   [5] : 라인명
+                             *   [6] : 구분명
+                             *   [7] : 제품코드
+                             *   [8] : 단위(Kg, MN3)
+                             *   [9] : 사용량
+                             *   [10] : 단가
+                             ***/
+
+                        var values = {
+                            USEDATE: (roa[i][0].split("/").length > 1) ? getFormatDate(roa[i][0]) : roa[i][0]
+                            , AREAID: roa[i][2]
+                            , AREANAME: roa[i][1]
+                            , EQSGID: roa[i][4]
+                            , EQSGNAME: roa[i][3].replace("_", "")
+                            , SEPARATION_TYPE: roa[i][6]
+                            , SEPARATION_TYPE_NAME: roa[i][5]
+                            , PRODID: roa[i][7]
+                            , MODIFIED_VALUE: getFormatInt(roa[i][8])
+                        };
+
+                        rowNo = UCRealgrid.GetRowCount();
+                        UCRealgrid_dataProvider.insertRow(rowNo, values);
+                        UCRealgrid_gridView.checkItem(rowNo, true); //2022.02.23 강민규 시작할때 모든값을 체크
+
+                        if (values.EQSGID != null) {
+                            SetButtonEnable("#btnSave", true);
+                        }
+                        else {
+                            xAlert('<%=lang.message["10032"]%>');
+                            //CloseLoading(); //2021.12.14 황유라 //22.03.02 강민규 삭제
+                            return;
+                        }
+                    }
+                    if (CHKcheck != true) {
+                        getCHK_YN();
+                    }
+                    if (alertCall == 1) {
+                        xAlert('<%=lang.message["9300"]%>');
+                        }
+                    }
+                    catch (ex) { }
+                }
+            }
+            else if (check.indexOf("MS") != -1) {
+                //$('#cboMeasureItem').combobox("select", "OA");
+                if (MeasureVal != "MS") {
+                    // msg(9017) : 업로드한 엑셀파일의 데이타가 잘못되었습니다. 확인 후 다시 처리하여 주십시오.
+                    xAlert('<%=lang.message["9017"]%>');
+                    //CloseLoading(); //2021.12.14 황유라 //22.03.02 강민규 삭제
+                    return;
+                }
+
+                reader.onload = function (e) {
+                    try {
+                        var alertCall = 0;
+                        var data = e.target.result;
+                        if (!rABS) data = new Uint8Array(data);
+                        var workbook = XLSX.read(data, { type: rABS ? 'binary' : 'array' });
+                        //var sheet_name_list = workbook.SheetNames;
+                        var roa = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], { header: 1 });
+                        var CHKcheck = false;
+                        for (var i = 1; i < roa.length; i++) {
+                            if (roa[i][0] == null) {
+                                getCHK_YN(); //2022.02.23 강민규 MODIFY_YN -> getCHK_YN 함수로 수정
+                                CHKcheck = true;
+                                return;
+                            }
+                            else if (roa[i][1] == null || roa[i][2] == null || roa[i][3] == null || roa[i][4] == null || roa[i][5] == null) {
+                                //입력이 제대로 안된 항목이 있습니다.
+                                xAlert('<%=lang.message["6030"]%>');
+                            }
+
+                        var values = {
+                            USEDATE: (roa[i][0].split("/").length > 1) ? getFormatDate(roa[i][0]) : roa[i][0]
+                            , AREAID: roa[i][2]
+                            , AREANAME: roa[i][1]
+                            , EQSGID: roa[i][4]
+                            , EQSGNAME: roa[i][3].replace("_", "")
+                            , SEPARATION_TYPE: roa[i][5]
+                            , PRODID: roa[i][5]
+                            , ATTR1: roa[i][6] // C20220726-000547 2022.08.01 강민규 계획량 컬럼 추가
+                            , MODIFIED_VALUE: getFormatInt(roa[i][7])
+                        };
+
+                        rowNo = UCRealgrid.GetRowCount();
+                        UCRealgrid_dataProvider.insertRow(rowNo, values);
+                        UCRealgrid_gridView.checkItem(rowNo, true); //2022.02.23 강민규 시작할때 모든값을 체크
+
+                        if (values.EQSGID != null) {
+                            SetButtonEnable("#btnSave", true);
+                        }
+                        else {
+                            xAlert('<%=lang.message["10032"]%>');
+                            //CloseLoading(); //2021.12.14 황유라 //22.03.02 강민규 삭제
+                            return;
+                        }
+                    }
+                    if (CHKcheck != true) {
+                        getCHK_YN();
+                    }
+                    if (alertCall == 1) {
+                        xAlert('<%=lang.message["9300"]%>');
+                        }
+                    }
+                    catch (ex) { }
+                }
+            }
+                //2022.07.06 강민규 C20220623-000071 측정항목 Capa 추가
+            else if (check.indexOf("CA") != -1) {
+                if (MeasureVal != "CA") {
+                    xAlert('<%=lang.message["9017"]%>');
+                    return;
+                }
+
+                reader.onload = function (e) {
+                    try {
+                        var alertCall = 0;
+                        var data = e.target.result;
+                        if (!rABS) data = new Uint8Array(data);
+                        var workbook = XLSX.read(data, { type: rABS ? 'binary' : 'array' });
+                        var roa = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], { header: 1 });
+                        var CHKcheck = false;
+                        for (var i = 1; i < roa.length; i++) {
+                            if (roa[i][0] == null) {
+                                getCHK_YN();
+                                CHKcheck = true;
+                                return;
+                            }
+                            else if (roa[i][1] == null || roa[i][2] == null || roa[i][3] == null || roa[i][4] == null || roa[i][5] == null) {
+                                //입력이 제대로 안된 항목이 있습니다.
+                                xAlert('<%=lang.message["6030"]%>');
+                            }
+
+
+
+                        var values = {
+                            USEDATE: (roa[i][0].split("/").length > 1) ? getFormatDate(roa[i][0]) : roa[i][0]
+                            , AREAID: roa[i][2]
+                            , AREANAME: roa[i][1]
+                            , EQSGID: roa[i][4]
+                            , EQSGNAME: roa[i][3].replace("_", "")
+                            , SEPARATION_TYPE: roa[i][5]
+                            , PRODID: roa[i][5]
+                            , ATTR1: roa[i][6]
+                            , ATTR2: roa[i][7]
+                            , ATTR3: roa[i][8]
+                            , ATTR4: roa[i][9]
+                            , ATTR5: roa[i][10]
+                            , MODIFIED_VALUE: getFormatInt(roa[i][11])
+                        };
+
+                        rowNo = UCRealgrid.GetRowCount();
+                        UCRealgrid_dataProvider.insertRow(rowNo, values);
+                        UCRealgrid_gridView.checkItem(rowNo, true); //2022.02.23 강민규 시작할때 모든값을 체크
+
+                        if (values.EQSGID != null) {
+                            SetButtonEnable("#btnSave", true);
+                        }
+                        else {
+                            xAlert('<%=lang.message["10032"]%>');
+                            return;
+                        }
+                    }
+                    if (CHKcheck != true) {
+                        getCHK_YN();
+                    }
+                    if (alertCall == 1) {
+                        xAlert('<%=lang.message["9300"]%>');
+                        }
+                    }
+                    catch (ex) { }
+                }
+            }
+            else {
+                // msg(9017) : 업로드한 엑셀파일의 데이타가 잘못되었습니다. 확인 후 다시 처리하여 주십시오.
+                xAlert('<%=lang.message["9017"]%>');
+                //CloseLoading(); //2021.12.14 황유라
+                return;
+            }
+
+    if (rABS) {
+        reader.readAsBinaryString(f);
+    } else {
+        reader.readAsArrayBuffer(f);
+    }
+    UCRealgrid_LoadDataCompleted();
+    $('#uploadFile').val("");
+
+        //CloseLoading(); //2021.12.14 황유라 //2021.12.20 강민규(비동기 실행이 끝날 때 까지 loading화면을 띄우기 위해 close 주석처리 
+        //CloseLoading(); //2022.01.10 황유라 화면 로딩 표시 제거가 안되어 임시 적용 //2022.01.10 수정완료 후 주석처리
+};
+
+function CollBackSaveData(id, data, message, status) {
+    if (status == "FAIL") {
+        xAlert(message);
+        return;
+    } else {
+        sendSetCount = sendSetCount + 1;
+        if (totalSetCount == sendSetCount) {
+            var _msg = "<%=lang.message["22753"]%>";
+            _msg = _msg.replace("%1", totalSetCount);
+            xAlert(_msg);
+            CloseLoading();
+            UCRealgrid_dataProvider.clearRows();
+            UCRealgrid_LoadDataCompleted();
+        }
+    }
+    CloseLoading();
+    ChangeItemGrid("init");
+}
+
+function ButtonClick_Delete(obj) {
+
+    var chkRows = UCRealgrid_gridView.getCheckedRows();
+
+    for (var i = chkRows.length - 1; i >= 0; i--) {
+
+        if (UCRealgrid_dataProvider.getRowState(chkRows[i]) === "created") {
+            UCRealgrid_dataProvider.setOptions({ softDeleting: false });
+        }
+        else {
+            UCRealgrid_dataProvider.setOptions({ softDeleting: true });
+            UCRealgrid_gridView.setOptions({ hideDeletedRows: true });
+        }
+        UCRealgrid_dataProvider.removeRow(chkRows[i]);
+    };
+    UCRealgrid_gridView.commit(true);
+    var rowNo = UCRealgrid.GetRowCount();
+};
+
+
+// 데이터 로드 후 처리
+function UCRealgrid_LoadDataCompleted() {
+    //       
+    //          UCRealgrid.Commit(true);
+    //
+    //          $("#totalConunt").html("<%=lang.word["Search results"]%> ( Total <span class='red01'>" + UCRealgrid.GetRowCount() + "</span> Found )");
+
+     }
+
+        function GetData() {
+
+        };
+
+    </script>
+</asp:Content>
+<%@ Register Src="../common/UserControl/UCUpdatePanelContent.ascx" TagName="UpdatePanelContent" TagPrefix="uc" %>
+<%@ Register Src="../common/UserControl/UCSearchToggle.ascx" TagName="SearchToggleContent" TagPrefix="uc" %>
+<%@ Register Src="../common/UserControl/UCpopCalendar.ascx" TagName="UCpopCalendar" TagPrefix="uc" %>
+<%@ Register Src="../common/UserControl/UCRealgrid.ascx" TagName="Realgrid" TagPrefix="uc" %>
+
+<%-- View --%>
+<asp:Content ID="UIContent" ContentPlaceHolderID="bodyHolder" runat="server">
+    <form id="form1" runat="server">
+        <asp:HiddenField ID="hidUserID" runat="server" />
+        <asp:HiddenField ID="hidLangID" runat="server" />
+        <asp:HiddenField ID="hidShopID" runat="server" />
+        <asp:HiddenField ID="hidCstStat" runat="server" />
+        <asp:HiddenField ID="hidMeasureID" runat="server" />
+        <div class="tableInquiry searchBox" id="divSearchArea">
+            <div class="itemBox">
+                <table>
+                    <colgroup>
+                        <col class="col_15p" />
+                        <col class="col_20p" />
+                        <col class="col_12p" />
+                        <col class="col_20p" />
+                        <col class="col_13p" />
+                        <col />
+                    </colgroup>
+                    <tbody>
+                        <tr>
+                            <!-- 측정항목 -->
+                            <th><span class="textPink">*</span><%=lang.word["Measure Item"]%></th>
+                            <td>
+                                <div style="float: none">
+                                    <input id="cboMeasureItem" class="easyui-combobox" style="width: 200px" onchange=" ChangeItemGrid( $('#cboMeasureItem').combobox('getValue'))" />
+                                </div>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        <!-- CRUD Button Area start -->
+        <div class="buttonArea" id="divButtonArea">
+            <span id="inputMsg" class="textPink" style="margin: 0px 0px 0px 5px; float: left; font-size: 18px"></span>
+            <ul id="ulButton" runat="server" class="btn_crud">
+                <li><a class="red" id="btnForm" onclick="onButtonClick(this.id)"><span><%=lang.word["Upload Document"]%></span></a></li>
+                <!-- 업로드양식 -->
+                <li><a class="red" id="btnExcelUpLoad" onclick="onButtonClick(this.id)"><span>EXCEL <%=lang.word["Upload"]%></span></a></li>
+                <!-- 업로드 -->
+                <li><a class="table_bar chkAuth"></a></li>
+                <li><a class="row_del" id="btnRowDelete" onclick="ButtonClick_Delete(this)"></a></li>
+                <li><a class="save" id="btnSave" onclick="onButtonClick(this.id)"><span><%=lang.word["Save"]%></span></a></li>
+                <li><a class="table_bar chkAuth"></a></li>
+                <li><a id="btnClose" class="red" onclick="onButtonClick(this.id)"><span><%=lang.word["Close"]%></span></a></li>
+                <!--닫기-->
+                <li>
+                    <input name="uploadFile" id="uploadFile" type="file" style="display: none;" /></li>
+            </ul>
+        </div>
+        <div class="clear"></div>
+        <!-- CRUD Button Area end -->
+        <!-- <div id="totalConunt" class="floatLeft01"><%=lang.word["Search results"]%> ( Total <span class='red01'>0</span> Found )</div> -->
+        <!-- Contents 시작  -->
+        <div id="dvContentsArea" class="table">
+            <uc:Realgrid ID="UCRealgrid" CALLID="UCRealgrid" HEIGHT="200" runat="server" />
+            <%--<div id="RealGrid"></div>--%>
+        </div>
+        <!-- Contents 종료 -->
+        <input type="hidden" id="hidArea" />
+        <input type="hidden" id="hidWh" />
+        <input type="hidden" id="#hidAreaNM" />
+        <input type="hidden" id="hidWhNM" />
+        <input type="hidden" id="hidCNTDT" />
+    </form>
+</asp:Content>
